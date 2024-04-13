@@ -61,14 +61,6 @@ pub struct Champion {
     pub(crate) stacking_on_hit_effects: Vec<StackingOnHitEffect>,
 }
 
-impl AddAssign for Damage {
-    fn add_assign(&mut self, rhs: Self) {
-        self.physical_component += rhs.physical_component;
-        self.magical_component += rhs.magical_component;
-        self.true_component += rhs.true_component;
-    }
-}
-
 // TODO: Implement damage over time tick event
 impl Champion {
     /// Set the level of the champion. This will recalculate the base stats of the champion based on
@@ -201,9 +193,12 @@ impl Champion {
         }
 
         mr = mr - _source.flat_mr_reduction;
-        mr = mr * (1.0 - _source.percent_mr_reduction);
-        mr = mr * (1.0 - _source.percent_mr_pen);
-        mr = mr - _source.mr_pen;
+
+        if mr > 0.0 {
+            mr = mr * (1.0 - _source.percent_mr_reduction);
+            mr = mr * (1.0 - _source.percent_mr_pen);
+            mr = mr - _source.mr_pen;
+        }
 
         mr
     }
@@ -281,6 +276,10 @@ impl Champion {
         if damage.physical_component > 0.0 {
             self.health = (self.health - damage.physical_component).round();
 
+            if self.health < 0.0 {
+                self.health = 0.0;
+            }
+
             damage.reduce_physical_damage(damage.physical_component);
         }
     }
@@ -289,9 +288,7 @@ impl Champion {
         // Take away from the magic shield first
         if self.magic_shield_amount > 0.0 {
             let old_magic_shield_amount = self.magic_shield_amount;
-
             self.magic_shield_amount = self.magic_shield_amount - damage.magical_component;
-
             damage.reduce_magical_damage(old_magic_shield_amount);
 
             if self.magic_shield_amount < 0.0 {
@@ -302,9 +299,7 @@ impl Champion {
         // Take away from the shield second
         if self.shield_amount > 0.0 && damage.magical_component > 0.0 {
             let old_shield_amount = self.shield_amount;
-
             self.shield_amount = self.shield_amount - damage.magical_component;
-
             damage.reduce_magical_damage(old_shield_amount);
 
             if self.shield_amount < 0.0 {
@@ -315,7 +310,6 @@ impl Champion {
         // Take away from the health last
         if damage.magical_component > 0.0 {
             self.health = (self.health - damage.magical_component).round();
-
             damage.reduce_magical_damage(damage.magical_component);
 
             if self.health < 0.0 {
@@ -328,9 +322,7 @@ impl Champion {
         // Take away from the shield first
         if self.shield_amount > 0.0 {
             let old_shield_amount = self.shield_amount;
-
             self.shield_amount = self.shield_amount - damage.true_component;
-
             damage.reduce_true_damage(old_shield_amount);
 
             if self.shield_amount < 0.0 {
@@ -341,7 +333,6 @@ impl Champion {
         // Take away from the health last
         if damage.true_component > 0.0 {
             self.health = (self.health - damage.true_component).round();
-
             damage.reduce_true_damage(damage.true_component);
 
             if self.health < 0.0 {
@@ -376,76 +367,248 @@ fn calculate_base_stat(base_stat: f32, bonus: f32, growth: f32, n: i32) -> f32 {
 
 #[cfg(test)]
 mod tests {
-    use crate::champion;
     use crate::utils::create_champion_by_name;
-    use super::*;
 
     #[test]
     fn test_set_level() {
-        let mut champion = create_champion_by_name("aatrox");
+        let mut champion = create_champion_by_name("test-bruiser");
+
+        assert_eq!(champion.health, 685.0);
+        assert_eq!(champion.hp5, 3);
+        assert_eq!(champion.resource, 0);
+        assert_eq!(champion.rp5, 0);
+        assert_eq!(champion.ad, 60);
+        assert_eq!(champion.as_, 0.651);
+        assert_eq!(champion.armor, 38.0);
+        assert_eq!(champion.mr, 32.0);
+
         champion.set_level(2);
 
-        assert_eq!(champion.health, 764.0);
+        assert_eq!(champion.health, 767.0);
         assert_eq!(champion.hp5, 4);
         assert_eq!(champion.resource, 0);
         assert_eq!(champion.rp5, 0);
-        assert_eq!(champion.ad, 65);
-        assert_eq!(champion.as_, 0.676);
-        assert_eq!(champion.armor, 42.45);
-        assert_eq!(champion.mr, 34);
+        assert_eq!(champion.ad, 64);
+        assert_eq!(champion.as_, 0.825468063);
+        assert_eq!(champion.armor, 41.0);
+        assert_eq!(champion.mr, 33.0);
     }
 
     #[test]
-    fn test_take_auto_attack_damage() {
-        let mut champion = create_champion_by_name("aatrox");
-        let mut dummy = create_champion_by_name("dummy");
+    fn test_calculate_crit_damage_multiplier_from_target() {
+        let mut champion = create_champion_by_name("test-bruiser");
+        let mut source = create_champion_by_name("test-bruiser");
 
-        champion.take_auto_attack_damage(&mut dummy);
+        assert_eq!(champion.calculate_crit_damage_multiplier_from_target(&source), 1.0);
 
-        assert_eq!(champion.health, 9940.0);
+        source.crit = 1.0;
+
+        assert_eq!(champion.calculate_crit_damage_multiplier_from_target(&source), 1.75);
+
+        source.bonus_crit_percent = 0.5;
+
+        assert_eq!(champion.calculate_crit_damage_multiplier_from_target(&source), 2.25);
     }
 
     #[test]
-    fn test_take_auto_attack_damage_with_shield() {
-        let mut champion = create_champion_by_name("aatrox");
-        let mut dummy = create_champion_by_name("dummy");
+    fn test_take_true_damage() {
+        let mut champion = create_champion_by_name("test-bruiser");
 
-        champion.physical_shield_amount = 100.0;
-
-        champion.take_auto_attack_damage(&mut dummy);
-
-        assert_eq!(champion.physical_shield_amount, 40.0);
-        assert_eq!(champion.health, 10000.0);
-    }
-
-    #[test]
-    fn test_take_auto_attack_damage_with_shield_and_shield() {
-        let mut champion = create_champion_by_name("aatrox");
-        let mut dummy = create_champion_by_name("dummy");
-
-        champion.physical_shield_amount = 100.0;
         champion.shield_amount = 100.0;
+        champion.magic_shield_amount = 100.0;
+        champion.physical_shield_amount = 100.0;
 
-        champion.take_auto_attack_damage(&mut dummy);
+        let mut damage = crate::damage::Damage::new(0.0, 0.0, 100.0);
 
-        assert_eq!(champion.physical_shield_amount, 40.0);
+        champion.take_true_damage(&mut damage);
+
         assert_eq!(champion.shield_amount, 0.0);
-        assert_eq!(champion.health, 10000.0);
+        assert_eq!(champion.health, 685.0);
+        assert_eq!(champion.magic_shield_amount, 100.0);
+        assert_eq!(champion.physical_shield_amount, 100.0);
+
+        damage.true_component = 100.0;
+
+        champion.take_true_damage(&mut damage);
+
+        assert_eq!(champion.shield_amount, 0.0);
+        assert_eq!(champion.health, 585.0);
+
+        champion.shield_amount = 99.0;
+        damage.true_component = 100.0;
+
+        champion.take_true_damage(&mut damage);
+
+        assert_eq!(champion.shield_amount, 0.0);
+        assert_eq!(champion.health, 584.0);
+
+        damage.true_component = 600.0;
+
+        champion.take_true_damage(&mut damage);
+
+        assert_eq!(champion.shield_amount, 0.0);
+        assert_eq!(champion.health, 0.0);
     }
 
     #[test]
-    fn test_take_auto_attack_damage_with_shield_and_shield_and_health() {
-        let mut champion = create_champion_by_name("aatrox");
-        let mut dummy = create_champion_by_name("dummy");
+    fn take_magic_damage() {
+        let mut champion = create_champion_by_name("test-bruiser");
 
-        champion.physical_shield_amount = 100.0;
         champion.shield_amount = 100.0;
-        champion.health = 100.0;
+        champion.magic_shield_amount = 100.0;
+        champion.physical_shield_amount = 100.0;
 
-        champion.take_auto_attack_damage(&mut dummy);
+        let mut damage = crate::damage::Damage::new(0.0, 100.0, 0.0);
 
-        assert_eq!(champion.physical_shield_amount, 40.0);
+        champion.take_magical_damage(&mut damage);
+
+        assert_eq!(champion.shield_amount, 100.0);
+        assert_eq!(champion.health, 685.0);
+        assert_eq!(champion.magic_shield_amount, 0.0);
+        assert_eq!(champion.physical_shield_amount, 100.0);
+
+        damage.magical_component = 100.0;
+
+        champion.take_magical_damage(&mut damage);
+
         assert_eq!(champion.shield_amount, 0.0);
-        assert_eq!(champion.health, 40.0);
+        assert_eq!(champion.health, 685.0);
+
+        champion.shield_amount = 99.0;
+        damage.magical_component = 100.0;
+
+        champion.take_magical_damage(&mut damage);
+
+        assert_eq!(champion.shield_amount, 0.0);
+        assert_eq!(champion.health, 684.0);
+
+        damage.magical_component = 700.0;
+
+        champion.take_magical_damage(&mut damage);
+
+        assert_eq!(champion.shield_amount, 0.0);
+        assert_eq!(champion.health, 0.0);
+    }
+
+    #[test]
+    fn take_physical_damage() {
+        let mut champion = create_champion_by_name("test-bruiser");
+
+        champion.shield_amount = 100.0;
+        champion.magic_shield_amount = 100.0;
+        champion.physical_shield_amount = 100.0;
+
+        let mut damage = crate::damage::Damage::new(100.0, 0.0, 0.0);
+
+        champion.take_physical_damage(&mut damage);
+
+        assert_eq!(champion.shield_amount, 100.0);
+        assert_eq!(champion.health, 685.0);
+        assert_eq!(champion.magic_shield_amount, 100.0);
+        assert_eq!(champion.physical_shield_amount, 0.0);
+
+        damage.physical_component = 100.0;
+
+        champion.take_physical_damage(&mut damage);
+
+        assert_eq!(champion.shield_amount, 0.0);
+        assert_eq!(champion.health, 685.0);
+
+        champion.shield_amount = 99.0;
+        damage.physical_component = 100.0;
+
+        champion.take_physical_damage(&mut damage);
+
+        assert_eq!(champion.shield_amount, 0.0);
+        assert_eq!(champion.health, 684.0);
+
+        damage.physical_component = 700.0;
+
+        champion.take_physical_damage(&mut damage);
+
+        assert_eq!(champion.shield_amount, 0.0);
+        assert_eq!(champion.health, 0.0);
+    }
+
+    #[test]
+    fn test_calculate_physical_damage_taken() {
+        let mut champion = create_champion_by_name("test-bruiser");
+        let effective_armor = 25.0;
+        let damage = 1000.0;
+
+        assert_eq!(champion.calculate_physical_damage_taken(effective_armor, damage), 800.0);
+
+        let effective_armor = 100.0;
+        assert_eq!(champion.calculate_physical_damage_taken(effective_armor, damage), 500.0);
+
+        let effective_armor = 200.0;
+        assert_eq!(champion.calculate_physical_damage_taken(effective_armor, damage), 333.33334);
+
+        let effective_armor = -100.0;
+        assert_eq!(champion.calculate_physical_damage_taken(effective_armor, damage), 1500.0);
+
+        let effective_armor = 0.0;
+        assert_eq!(champion.calculate_physical_damage_taken(effective_armor, damage), 1000.0);
+    }
+
+    #[test]
+    fn test_calculate_magic_damage_taken() {
+        let mut champion = create_champion_by_name("test-bruiser");
+        let effective_mr = 25.0;
+        let damage = 1000.0;
+
+        assert_eq!(champion.calculate_magical_damage_taken(effective_mr, damage), 800.0);
+
+        let effective_mr = 100.0;
+        assert_eq!(champion.calculate_magical_damage_taken(effective_mr, damage), 500.0);
+
+        let effective_mr = 200.0;
+        assert_eq!(champion.calculate_magical_damage_taken(effective_mr, damage), 333.33334);
+
+        let effective_mr = -100.0;
+        assert_eq!(champion.calculate_magical_damage_taken(effective_mr, damage), 1500.0);
+
+        let effective_mr = 0.0;
+        assert_eq!(champion.calculate_magical_damage_taken(effective_mr, damage), 1000.0);
+    }
+
+    #[test]
+    fn test_calculate_magic_resist_reduction() {
+        let mut champion = create_champion_by_name("test-bruiser");
+        champion.mr = 80.0;
+
+        let mut source = create_champion_by_name("test-bruiser");
+
+        source.mr_pen = 10.0;
+        source.percent_mr_pen = 0.35;
+        source.flat_mr_reduction = 20.0;
+        source.percent_mr_reduction = 0.30;
+
+        assert_eq!(champion.calculate_magic_resist_reduction(&source), 17.3);
+
+        champion.mr = 18.0;
+
+        assert_eq!(champion.calculate_magic_resist_reduction(&source), -2.0);
+    }
+
+    #[test]
+    fn test_calculate_armor_reduction() {
+        let mut champion = create_champion_by_name("test-bruiser");
+        champion.armor = 100.0;
+        champion.bonus_armor = 200.0;
+
+        let mut source = create_champion_by_name("test-bruiser");
+
+        source.lethality = 10.0;
+        source.percent_bonus_armor_pen = 0.45;
+        source.armor_reduction = 30.0;
+        source.percent_armor_reduction = 0.30;
+
+        assert_eq!(champion.calculate_armor_reduction(&source), 122.3);
+
+        champion.armor = 18.0;
+        champion.bonus_armor = 0.0;
+
+        assert_eq!(champion.calculate_armor_reduction(&source), -12.0);
     }
 }

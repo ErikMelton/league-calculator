@@ -1,7 +1,17 @@
+use std::ops::AddAssign;
+
 pub struct Damage {
     pub(crate) physical_component: f32,
     pub(crate) magical_component: f32,
     pub(crate) true_component: f32,
+}
+
+impl AddAssign for Damage {
+    fn add_assign(&mut self, rhs: Self) {
+        self.physical_component += rhs.physical_component;
+        self.magical_component += rhs.magical_component;
+        self.true_component += rhs.true_component;
+    }
 }
 
 impl Damage {
