@@ -11,8 +11,10 @@ pub fn calculate_scenario(scenario: Scenario) {
     println!("Calculating scenario...");
 }
 
-fn calculate_aa_damage(scenario: &Scenario) -> i32{
+fn calculate_aa_damage(scenario: &Scenario) -> i32 {
     println!("Calculating damage...");
+
+    // TODO: Consider auto cancels
 
     0
 }

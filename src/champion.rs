@@ -1,3 +1,5 @@
+use rand::Rng;
+
 pub struct Champion {
     pub(crate) name: String,
     pub(crate) level: i32,
@@ -34,7 +36,7 @@ pub struct Champion {
     pub(crate) ms: i32,
     base_crit: f32,
     pub(crate) crit: f32,
-    base_crit_percent_damage: f32,
+    bonus_crit_percent: f32,
     // TODO: Shields only last for a certain amount of time, and decay! Use a struct
     pub(crate) shield_amount: f32,
     pub(crate) magic_shield_amount: f32,
@@ -47,12 +49,6 @@ pub struct Champion {
     pub(crate) life_steal: i32,
     pub(crate) spell_vamp: i32,
     pub(crate) tenacity: i32,
-}
-
-pub enum DamageType {
-    Physical,
-    Magical,
-    True,
 }
 
 impl Champion {
@@ -108,15 +104,14 @@ impl Champion {
 
         // Take away from the health last
         if damage > 0.0 {
-            self.health = self.health - damage;
+            self.health = (self.health - damage).round();
         }
 
 
         println!("Remaining health: {}", self.health);
 
-        // TODO: Calculate crit damage
-        // TODO: Consider on-hit effects
-        // TODO: Consider auto cancels
+        // TODO: Consider on-hit effects / empowered auto attacks
+
     }
 
     fn calculate_armor_reduction(&self, _source: &Champion) -> f32 {
@@ -157,11 +152,29 @@ impl Champion {
     }
 
     fn calculate_physical_damage_taken(&self, effective_armor: f32,  _source: &Champion) -> f32 {
-        return if effective_armor >= 0.0 {
-            (100.0 / (100.0 + effective_armor)) * _source.ad as f32
-        } else {
-            (2.0 - 100.0 / (100.0 - effective_armor)) * _source.ad as f32
+        let mut damage = _source.ad as f32;
+
+        // Simplified crit damage calculation; we do not apply smoothing to compensate for "streaks"
+        let crit_damage_multiplier = self.calculate_crit_damage_multiplier_from_target(_source);
+
+        if _source.crit > 0.0 {
+            let mut rng = rand::thread_rng();
+            let probability = rng.gen::<f32>();
+
+            if probability <= _source.crit {
+                damage = damage * crit_damage_multiplier;
+            }
         }
+
+        return if effective_armor >= 0.0 {
+            (100.0 / (100.0 + effective_armor)) * damage
+        } else {
+            (2.0 - 100.0 / (100.0 - effective_armor)) * damage
+        }
+    }
+
+    fn calculate_crit_damage_multiplier_from_target(&self, _source: &Champion) -> f32 {
+        1.0 + (_source.crit * (0.75 + _source.bonus_crit_percent))
     }
 }
 
@@ -224,8 +237,57 @@ pub fn create_champion_by_name(name: &str) -> Champion {
             base_ms: 345,
             ms: 345,
             base_crit: 0.0,
+            crit: 0.50,
+            bonus_crit_percent: 0.0,
+            shield_amount: 0.0,
+            magic_shield_amount: 0.0,
+            physical_shield_amount: 0.0,
+            mr_pen: 0,
+            lethality: 0.0,
+            percent_bonus_armor_pen: 0.0,
+            armor_reduction: 0.0,
+            percent_armor_reduction: 0.0,
+            life_steal: 0,
+            spell_vamp: 0,
+            tenacity: 0,
+        },
+        "dummy" => Champion {
+            name: String::from("Dummy"),
+            level: 1,
+            base_health: 10000.0,
+            base_health_growth: 0.0,
+            health: 10000.0,
+            base_hp5: 0.0,
+            base_hp5_growth: 0.0,
+            hp5: 0,
+            base_resource: 0.0,
+            base_resource_growth: 0.0,
+            resource: 0,
+            base_rp5: 0.0,
+            base_rp5_growth: 0.0,
+            rp5: 0,
+            base_ad: 0.0,
+            base_ad_growth: 0.0,
+            ad: 0,
+            base_as: 0.0,
+            base_as_growth_percent: 0.0,
+            attack_windup: 0.0,
+            as_: 0.0,
+            as_ratio: 0.0,
+            base_armor: 0.0,
+            base_armor_growth: 0.0,
+            armor: 0.0,
+            bonus_armor: 0.0,
+            base_mr: 0.0,
+            base_mr_growth: 0.0,
+            mr: 0,
+            base_range: 0,
+            range: 0,
+            base_ms: 0,
+            ms: 0,
+            base_crit: 0.0,
             crit: 0.0,
-            base_crit_percent_damage: 1.75,
+            bonus_crit_percent: 0.0,
             shield_amount: 0.0,
             magic_shield_amount: 0.0,
             physical_shield_amount: 0.0,
@@ -244,60 +306,9 @@ pub fn create_champion_by_name(name: &str) -> Champion {
     }
 }
 
-pub fn create_dummy() -> Champion {
-    Champion {
-        name: String::from("Dummy"),
-        level: 1,
-        base_health: 10000.0,
-        base_health_growth: 0.0,
-        health: 10000.0,
-        base_hp5: 0.0,
-        base_hp5_growth: 0.0,
-        hp5: 0,
-        base_resource: 0.0,
-        base_resource_growth: 0.0,
-        resource: 0,
-        base_rp5: 0.0,
-        base_rp5_growth: 0.0,
-        rp5: 0,
-        base_ad: 0.0,
-        base_ad_growth: 0.0,
-        ad: 0,
-        base_as: 0.0,
-        base_as_growth_percent: 0.0,
-        attack_windup: 0.0,
-        as_: 0.0,
-        as_ratio: 0.0,
-        base_armor: 0.0,
-        base_armor_growth: 0.0,
-        armor: 0.0,
-        bonus_armor: 0.0,
-        base_mr: 0.0,
-        base_mr_growth: 0.0,
-        mr: 0,
-        base_range: 0,
-        range: 0,
-        base_ms: 0,
-        ms: 0,
-        base_crit: 0.0,
-        crit: 0.0,
-        base_crit_percent_damage: 0.0,
-        shield_amount: 0.0,
-        magic_shield_amount: 0.0,
-        physical_shield_amount: 0.0,
-        mr_pen: 0,
-        lethality: 0.0,
-        percent_bonus_armor_pen: 0.0,
-        armor_reduction: 0.0,
-        percent_armor_reduction: 0.0,
-        life_steal: 0,
-        spell_vamp: 0,
-        tenacity: 0,
-    }
-}
-
 #[cfg(test)]
 mod tests {
+    use crate::champion;
     use super::*;
 
     #[test]
@@ -318,7 +329,7 @@ mod tests {
     #[test]
     fn test_take_auto_attack_damage() {
         let mut champion = create_champion_by_name("aatrox");
-        let mut dummy = create_dummy();
+        let mut dummy = create_champion_by_name("dummy");
 
         champion.take_auto_attack_damage(&dummy);
 
@@ -328,7 +339,7 @@ mod tests {
     #[test]
     fn test_take_auto_attack_damage_with_shield() {
         let mut champion = create_champion_by_name("aatrox");
-        let mut dummy = create_dummy();
+        let mut dummy = create_champion_by_name("dummy");
 
         champion.physical_shield_amount = 100.0;
 
@@ -341,7 +352,7 @@ mod tests {
     #[test]
     fn test_take_auto_attack_damage_with_shield_and_shield() {
         let mut champion = create_champion_by_name("aatrox");
-        let mut dummy = create_dummy();
+        let mut dummy = create_champion_by_name("dummy");
 
         champion.physical_shield_amount = 100.0;
         champion.shield_amount = 100.0;
@@ -356,7 +367,7 @@ mod tests {
     #[test]
     fn test_take_auto_attack_damage_with_shield_and_shield_and_health() {
         let mut champion = create_champion_by_name("aatrox");
-        let mut dummy = create_dummy();
+        let mut dummy = create_champion_by_name("dummy");
 
         champion.physical_shield_amount = 100.0;
         champion.shield_amount = 100.0;
