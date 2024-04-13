@@ -1,4 +1,9 @@
+use std::cmp::PartialEq;
+use std::ops::AddAssign;
 use rand::Rng;
+use crate::damage::Damage;
+
+use crate::enhancements::{DamageType, DoTEffect, LimitedUseOnHitEffect, StackingOnHitEffect};
 
 pub struct Champion {
     pub(crate) name: String,
@@ -49,8 +54,20 @@ pub struct Champion {
     pub(crate) life_steal: i32,
     pub(crate) spell_vamp: i32,
     pub(crate) tenacity: i32,
+    pub(crate) limited_use_on_hit_effects: Vec<LimitedUseOnHitEffect>,
+    pub(crate) duration_on_hit_effects: Vec<DoTEffect>,
+    pub(crate) stacking_on_hit_effects: Vec<StackingOnHitEffect>,
 }
 
+impl AddAssign for Damage {
+    fn add_assign(&mut self, rhs: Self) {
+        self.physical_component += rhs.physical_component;
+        self.magical_component += rhs.magical_component;
+        self.true_component += rhs.true_component;
+    }
+}
+
+// TODO: Implement damage over time tick event
 impl Champion {
     /// Set the level of the champion. This will recalculate the base stats of the champion based on
     /// the level supplied.
@@ -66,52 +83,77 @@ impl Champion {
         self.mr = calculate_base_stat(self.base_mr, 0.0, self.base_mr_growth, level).round() as i32;
     }
 
-    pub fn take_auto_attack_damage(&mut self, _source: &Champion) {
+    /// Take auto attack damage from a source champion, applying crits and on-hit effects
+    pub fn take_auto_attack_damage(&mut self, _source: &mut Champion) {
         let effective_armor = self.calculate_armor_reduction(_source);
         let effective_health = self.health + self.shield_amount + self.physical_shield_amount;
-        let mut damage = self.calculate_physical_damage_taken(effective_armor, _source);
 
-        if damage >= effective_health {
+        let mut damage = self.calculate_physical_damage_taken(effective_armor, _source);
+        let on_hit_damage = self.calculate_on_hit_damage(_source);
+
+        damage += on_hit_damage;
+
+        _source.decrement_limited_use_on_hit_effects();
+
+        if damage.total() >= effective_health {
             println!("Champion died!");
             return;
         }
 
-        // Take away from the physical shield first
-        if self.physical_shield_amount > 0.0 {
-            let old_physical_shield_amount = self.physical_shield_amount;
-
-            self.physical_shield_amount = self.physical_shield_amount - damage;
-
-            damage = damage - old_physical_shield_amount;
-
-            if self.physical_shield_amount < 0.0 {
-                self.physical_shield_amount = 0.0;
-            }
-        }
-
-        // Take away from the shield second
-        if self.shield_amount > 0.0 && damage > 0.0{
-            let old_shield_amount = self.shield_amount;
-
-            self.shield_amount = self.shield_amount - damage;
-
-            damage = damage - old_shield_amount;
-
-            if self.shield_amount < 0.0 {
-                self.shield_amount = 0.0;
-            }
-        }
-
-        // Take away from the health last
-        if damage > 0.0 {
-            self.health = (self.health - damage).round();
-        }
-
+        self.take_physical_damage(damage);
 
         println!("Remaining health: {}", self.health);
 
         // TODO: Consider on-hit effects / empowered auto attacks
 
+    }
+
+    pub fn add_limited_use_on_hit_effect(&mut self, effect: LimitedUseOnHitEffect) {
+        self.limited_use_on_hit_effects.push(effect);
+    }
+    pub fn add_duration_on_hit_effect(&mut self, effect: DoTEffect) {
+        self.duration_on_hit_effects.push(effect);
+    }
+
+    pub fn add_stacking_on_hit_effect(&mut self, effect: StackingOnHitEffect) {
+        self.stacking_on_hit_effects.push(effect);
+    }
+
+    pub fn remove_on_hit_effect(&mut self, id: &str) {
+        self.limited_use_on_hit_effects.retain(|effect| effect.id != id);
+        self.duration_on_hit_effects.retain(|effect| effect.id != id);
+        self.stacking_on_hit_effects.retain(|effect| effect.id != id);
+    }
+
+    fn calculate_on_hit_damage(&mut self, _source: &Champion) -> Damage {
+        let mut damage = Damage::new(0.0, 0.0, 0.0);
+
+        for effect in &_source.limited_use_on_hit_effects {
+            if effect.num_uses > 0 {
+                match effect.damage_type {
+                    DamageType::Physical => {
+                        damage.physical_component += effect.damage;
+                    }
+                    DamageType::Magical => {
+                        damage.magical_component += effect.damage;
+                    }
+                    DamageType::True => {
+                        damage.true_component += effect.damage;
+                    }
+                }
+
+            }
+        }
+
+        damage
+    }
+
+    fn decrement_limited_use_on_hit_effects(&mut self) {
+        for effect in &mut self.limited_use_on_hit_effects {
+            if effect.num_uses > 0 {
+                effect.num_uses -= 1;
+            }
+        }
     }
 
     fn calculate_armor_reduction(&self, _source: &Champion) -> f32 {
@@ -151,8 +193,8 @@ impl Champion {
         armor + bonus_armor
     }
 
-    fn calculate_physical_damage_taken(&self, effective_armor: f32,  _source: &Champion) -> f32 {
-        let mut damage = _source.ad as f32;
+    fn calculate_physical_damage_taken(&self, effective_armor: f32,  _source: &Champion) -> Damage {
+        let mut damage = Damage::new(_source.ad as f32, 0.0, 0.0);
 
         // Simplified crit damage calculation; we do not apply smoothing to compensate for "streaks"
         let crit_damage_multiplier = self.calculate_crit_damage_multiplier_from_target(_source);
@@ -162,14 +204,51 @@ impl Champion {
             let probability = rng.gen::<f32>();
 
             if probability <= _source.crit {
-                damage = damage * crit_damage_multiplier;
+                damage.physical_component = damage.physical_component * crit_damage_multiplier;
             }
         }
 
         return if effective_armor >= 0.0 {
-            (100.0 / (100.0 + effective_armor)) * damage
+            damage.physical_component = (100.0 / (100.0 + effective_armor)) * damage.physical_component;
+            damage
         } else {
-            (2.0 - 100.0 / (100.0 - effective_armor)) * damage
+            damage.physical_component =  (2.0 - 100.0 / (100.0 - effective_armor)) * damage.physical_component;
+            damage
+        }
+    }
+
+    fn take_physical_damage(&mut self, mut damage: Damage) {
+        // Take away from the physical shield first
+        if self.physical_shield_amount > 0.0 {
+            let old_physical_shield_amount = self.physical_shield_amount;
+
+            self.physical_shield_amount = self.physical_shield_amount - damage.physical_component;
+
+            damage.reduce_physical_damage(old_physical_shield_amount);
+
+            if self.physical_shield_amount < 0.0 {
+                self.physical_shield_amount = 0.0;
+            }
+        }
+
+        // Take away from the shield second
+        if self.shield_amount > 0.0 && damage.physical_component > 0.0 {
+            let old_shield_amount = self.shield_amount;
+
+            self.shield_amount = self.shield_amount - damage.physical_component;
+
+            damage.reduce_physical_damage(old_shield_amount);
+
+            if self.shield_amount < 0.0 {
+                self.shield_amount = 0.0;
+            }
+        }
+
+        // Take away from the health last
+        if damage.physical_component > 0.0 {
+            self.health = (self.health - damage.physical_component).round();
+
+            damage.reduce_physical_damage(damage.physical_component);
         }
     }
 
@@ -250,6 +329,9 @@ pub fn create_champion_by_name(name: &str) -> Champion {
             life_steal: 0,
             spell_vamp: 0,
             tenacity: 0,
+            limited_use_on_hit_effects: vec![],
+            duration_on_hit_effects: vec![],
+            stacking_on_hit_effects: vec![],
         },
         "dummy" => Champion {
             name: String::from("Dummy"),
@@ -299,6 +381,9 @@ pub fn create_champion_by_name(name: &str) -> Champion {
             life_steal: 0,
             spell_vamp: 0,
             tenacity: 0,
+            limited_use_on_hit_effects: vec![],
+            duration_on_hit_effects: vec![],
+            stacking_on_hit_effects: vec![],
         },
         _ => {
             panic!("Champion not found: {}", name);
@@ -331,7 +416,7 @@ mod tests {
         let mut champion = create_champion_by_name("aatrox");
         let mut dummy = create_champion_by_name("dummy");
 
-        champion.take_auto_attack_damage(&dummy);
+        champion.take_auto_attack_damage(&mut dummy);
 
         assert_eq!(champion.health, 9940.0);
     }
@@ -343,7 +428,7 @@ mod tests {
 
         champion.physical_shield_amount = 100.0;
 
-        champion.take_auto_attack_damage(&dummy);
+        champion.take_auto_attack_damage(&mut dummy);
 
         assert_eq!(champion.physical_shield_amount, 40.0);
         assert_eq!(champion.health, 10000.0);
@@ -357,7 +442,7 @@ mod tests {
         champion.physical_shield_amount = 100.0;
         champion.shield_amount = 100.0;
 
-        champion.take_auto_attack_damage(&dummy);
+        champion.take_auto_attack_damage(&mut dummy);
 
         assert_eq!(champion.physical_shield_amount, 40.0);
         assert_eq!(champion.shield_amount, 0.0);
@@ -373,7 +458,7 @@ mod tests {
         champion.shield_amount = 100.0;
         champion.health = 100.0;
 
-        champion.take_auto_attack_damage(&dummy);
+        champion.take_auto_attack_damage(&mut dummy);
 
         assert_eq!(champion.physical_shield_amount, 40.0);
         assert_eq!(champion.shield_amount, 0.0);

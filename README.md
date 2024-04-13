@@ -28,6 +28,8 @@ This will generate the documentation and open it in your web browser.
 ## TODO
  
 - Implement the simulation module.
+  - 30 TPS
+  - Implement damage over time tick event
 - Consider how to run simulations.
 - Implement the ability rotation and hit chance for both the player and enemy in the scenario module.
 - Consider auto cancels in the scenario module.
