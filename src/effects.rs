@@ -25,7 +25,6 @@ pub struct DoTEffect {
 pub struct LimitedUseOnHitEffect {
     pub(crate) id: String,
     pub(crate) damage: f32,
-    pub(crate) damage_over_time: f32,
     pub(crate) damage_type: DamageType,
     pub(crate) num_uses: i32,
 }
@@ -92,11 +91,10 @@ impl DoTEffect {
 }
 
 impl LimitedUseOnHitEffect {
-    pub(crate) fn new(id: &str, damage: f32, damage_over_time: f32, damage_type: DamageType, num_uses: i32) -> Self {
+    pub(crate) fn new(id: &str, damage: f32, damage_type: DamageType, num_uses: i32) -> Self {
         LimitedUseOnHitEffect {
             id: id.to_string(),
             damage,
-            damage_over_time,
             damage_type,
             num_uses,
         }

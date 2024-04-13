@@ -1,53 +1,55 @@
-use std::cmp::PartialEq;
 use std::ops::AddAssign;
 use rand::Rng;
 use crate::damage::Damage;
 
-use crate::enhancements::{DamageType, DoTEffect, LimitedUseOnHitEffect, StackingOnHitEffect};
+use crate::effects::{DamageType, DoTEffect, LimitedUseOnHitEffect, StackingOnHitEffect};
 
 pub struct Champion {
     pub(crate) name: String,
     pub(crate) level: i32,
-    base_health: f32,
-    base_health_growth: f32,
+    pub(crate) base_health: f32,
+    pub(crate) base_health_growth: f32,
     pub(crate) health: f32,
-    base_hp5: f32,
-    base_hp5_growth: f32,
+    pub(crate) base_hp5: f32,
+    pub(crate) base_hp5_growth: f32,
     pub(crate) hp5: i32,
-    base_resource: f32,
-    base_resource_growth: f32,
+    pub(crate) base_resource: f32,
+    pub(crate) base_resource_growth: f32,
     pub(crate) resource: i32,
-    base_rp5: f32,
-    base_rp5_growth: f32,
+    pub(crate) base_rp5: f32,
+    pub(crate) base_rp5_growth: f32,
     pub(crate) rp5: i32,
-    base_ad: f32,
-    base_ad_growth: f32,
+    pub(crate) base_ad: f32,
+    pub(crate) base_ad_growth: f32,
     pub(crate) ad: i32,
-    base_as: f32,
-    base_as_growth_percent: f32,
-    attack_windup: f32,
+    pub(crate) base_as: f32,
+    pub(crate) base_as_growth_percent: f32,
+    pub(crate) attack_windup: f32,
     pub(crate) as_: f32,
-    as_ratio: f32,
-    base_armor: f32,
-    base_armor_growth: f32,
+    pub(crate) as_ratio: f32,
+    pub(crate) base_armor: f32,
+    pub(crate) base_armor_growth: f32,
     pub(crate) armor: f32,
     pub(crate) bonus_armor: f32,
-    base_mr: f32,
-    base_mr_growth: f32,
-    pub(crate) mr: i32,
-    base_range: i32,
+    pub(crate) base_mr: f32,
+    pub(crate) base_mr_growth: f32,
+    pub(crate) mr: f32,
+    pub(crate) base_range: i32,
     pub(crate) range: i32,
-    base_ms: i32,
+    pub(crate) base_ms: i32,
     pub(crate) ms: i32,
-    base_crit: f32,
+    pub(crate) base_crit: f32,
     pub(crate) crit: f32,
-    bonus_crit_percent: f32,
-    // TODO: Shields only last for a certain amount of time, and decay! Use a struct
+    pub(crate) bonus_crit_percent: f32,
+    // TODO: Shields only last for a certain amount of time, and some decay! Use a struct
     pub(crate) shield_amount: f32,
     pub(crate) magic_shield_amount: f32,
     pub(crate) physical_shield_amount: f32,
-    pub(crate) mr_pen: i32,
-    pub(crate) lethality: f32, // https://leagueoflegends.fandom.com/wiki/Armor_penetration
+    pub(crate) mr_pen: f32,
+    pub(crate) flat_mr_reduction: f32,
+    pub(crate) percent_mr_reduction: f32,
+    pub(crate) percent_mr_pen: f32,
+    pub(crate) lethality: f32,
     pub(crate) percent_bonus_armor_pen: f32,
     pub(crate) armor_reduction: f32,
     pub(crate) percent_armor_reduction: f32,
@@ -80,37 +82,35 @@ impl Champion {
         self.ad = calculate_base_stat(self.base_ad, 0.0, self.base_ad_growth, level).round() as i32;
         self.as_ = calculate_attack_speed(self.base_as, self.as_ratio, self.base_as_growth_percent, 0.25, level);
         self.armor = calculate_base_stat(self.base_armor, 0.0, self.base_armor_growth, level).round();
-        self.mr = calculate_base_stat(self.base_mr, 0.0, self.base_mr_growth, level).round() as i32;
+        self.mr = calculate_base_stat(self.base_mr, 0.0, self.base_mr_growth, level).round();
     }
 
     /// Take auto attack damage from a source champion, applying crits and on-hit effects
     pub fn take_auto_attack_damage(&mut self, _source: &mut Champion) {
         let effective_armor = self.calculate_armor_reduction(_source);
-        let effective_health = self.health + self.shield_amount + self.physical_shield_amount;
+        let effective_mr = self.calculate_magic_resist_reduction(_source);
 
-        let mut damage = self.calculate_physical_damage_taken(effective_armor, _source);
-        let on_hit_damage = self.calculate_on_hit_damage(_source);
+        let mut aa_damage = self.calculate_physical_damage_taken_from_aa(effective_armor, _source);
 
-        damage += on_hit_damage;
+        let on_hit_damage_pre_mit = self.calculate_on_hit_damage(_source);
+        let mut on_hit_damage = Damage::new(0.0, 0.0, 0.0);
+        on_hit_damage.physical_component = self.calculate_physical_damage_taken(effective_armor, on_hit_damage_pre_mit.physical_component);
+        on_hit_damage.magical_component = self.calculate_magical_damage_taken(effective_mr, on_hit_damage_pre_mit.magical_component);
+        on_hit_damage.true_component = on_hit_damage_pre_mit.true_component;
+
+        aa_damage += on_hit_damage;
+
+        self.take_damage(aa_damage);
 
         _source.decrement_limited_use_on_hit_effects();
 
-        if damage.total() >= effective_health {
-            println!("Champion died!");
-            return;
-        }
-
-        self.take_physical_damage(damage);
-
         println!("Remaining health: {}", self.health);
-
-        // TODO: Consider on-hit effects / empowered auto attacks
-
     }
 
     pub fn add_limited_use_on_hit_effect(&mut self, effect: LimitedUseOnHitEffect) {
         self.limited_use_on_hit_effects.push(effect);
     }
+
     pub fn add_duration_on_hit_effect(&mut self, effect: DoTEffect) {
         self.duration_on_hit_effects.push(effect);
     }
@@ -193,7 +193,22 @@ impl Champion {
         armor + bonus_armor
     }
 
-    fn calculate_physical_damage_taken(&self, effective_armor: f32,  _source: &Champion) -> Damage {
+    fn calculate_magic_resist_reduction(&self, _source: &Champion) -> f32 {
+        let mut mr = self.mr;
+
+        if mr == 0.0 {
+            return 0.0;
+        }
+
+        mr = mr - _source.flat_mr_reduction;
+        mr = mr * (1.0 - _source.percent_mr_reduction);
+        mr = mr * (1.0 - _source.percent_mr_pen);
+        mr = mr - _source.mr_pen;
+
+        mr
+    }
+
+    fn calculate_physical_damage_taken_from_aa(&self, effective_armor: f32, _source: &Champion) -> Damage {
         let mut damage = Damage::new(_source.ad as f32, 0.0, 0.0);
 
         // Simplified crit damage calculation; we do not apply smoothing to compensate for "streaks"
@@ -208,16 +223,34 @@ impl Champion {
             }
         }
 
+        damage.physical_component = self.calculate_physical_damage_taken(effective_armor, damage.physical_component);
+
+        damage
+    }
+
+    fn calculate_physical_damage_taken(&self, effective_armor: f32, damage: f32) -> f32 {
         return if effective_armor >= 0.0 {
-            damage.physical_component = (100.0 / (100.0 + effective_armor)) * damage.physical_component;
-            damage
+            (100.0 / (100.0 + effective_armor)) * damage
         } else {
-            damage.physical_component =  (2.0 - 100.0 / (100.0 - effective_armor)) * damage.physical_component;
-            damage
+            (2.0 - 100.0 / (100.0 - effective_armor)) * damage
         }
     }
 
-    fn take_physical_damage(&mut self, mut damage: Damage) {
+    fn calculate_magical_damage_taken(&self, effective_mr: f32, damage: f32) -> f32 {
+        return if effective_mr >= 0.0 {
+            (100.0 / (100.0 + effective_mr)) * damage
+        } else {
+            (2.0 - 100.0 / (100.0 - effective_mr)) * damage
+        }
+    }
+
+    fn take_damage(&mut self, mut damage: Damage) {
+        self.take_physical_damage(&mut damage);
+        self.take_magical_damage(&mut damage);
+        self.take_true_damage(&mut damage);
+    }
+
+    fn take_physical_damage(&mut self, damage: &mut Damage) {
         // Take away from the physical shield first
         if self.physical_shield_amount > 0.0 {
             let old_physical_shield_amount = self.physical_shield_amount;
@@ -252,6 +285,71 @@ impl Champion {
         }
     }
 
+    fn take_magical_damage(&mut self, damage: &mut Damage) {
+        // Take away from the magic shield first
+        if self.magic_shield_amount > 0.0 {
+            let old_magic_shield_amount = self.magic_shield_amount;
+
+            self.magic_shield_amount = self.magic_shield_amount - damage.magical_component;
+
+            damage.reduce_magical_damage(old_magic_shield_amount);
+
+            if self.magic_shield_amount < 0.0 {
+                self.magic_shield_amount = 0.0;
+            }
+        }
+
+        // Take away from the shield second
+        if self.shield_amount > 0.0 && damage.magical_component > 0.0 {
+            let old_shield_amount = self.shield_amount;
+
+            self.shield_amount = self.shield_amount - damage.magical_component;
+
+            damage.reduce_magical_damage(old_shield_amount);
+
+            if self.shield_amount < 0.0 {
+                self.shield_amount = 0.0;
+            }
+        }
+
+        // Take away from the health last
+        if damage.magical_component > 0.0 {
+            self.health = (self.health - damage.magical_component).round();
+
+            damage.reduce_magical_damage(damage.magical_component);
+
+            if self.health < 0.0 {
+                self.health = 0.0;
+            }
+        }
+    }
+
+    fn take_true_damage(&mut self, damage: &mut Damage) {
+        // Take away from the shield first
+        if self.shield_amount > 0.0 {
+            let old_shield_amount = self.shield_amount;
+
+            self.shield_amount = self.shield_amount - damage.true_component;
+
+            damage.reduce_true_damage(old_shield_amount);
+
+            if self.shield_amount < 0.0 {
+                self.shield_amount = 0.0;
+            }
+        }
+
+        // Take away from the health last
+        if damage.true_component > 0.0 {
+            self.health = (self.health - damage.true_component).round();
+
+            damage.reduce_true_damage(damage.true_component);
+
+            if self.health < 0.0 {
+                self.health = 0.0;
+            }
+        }
+    }
+
     fn calculate_crit_damage_multiplier_from_target(&self, _source: &Champion) -> f32 {
         1.0 + (_source.crit * (0.75 + _source.bonus_crit_percent))
     }
@@ -276,124 +374,10 @@ fn calculate_base_stat(base_stat: f32, bonus: f32, growth: f32, n: i32) -> f32 {
     base_stat + bonus + (growth * (n - 1) as f32) * (0.7025 + 0.0175 * (n - 1) as f32)
 }
 
-pub fn create_champion_by_name(name: &str) -> Champion {
-    let lower_name = name.to_lowercase();
-
-    // TODO: Load these base values from a file or API
-    match lower_name.as_str() {
-        "aatrox" => Champion {
-            name: String::from("Aatrox"),
-            level: 1,
-            base_health: 685.0,
-            base_health_growth: 114.0,
-            health: 650.0,
-            base_hp5: 3.0,
-            base_hp5_growth: 1.0,
-            hp5: 3,
-            base_resource: 0.0,
-            base_resource_growth: 0.0,
-            resource: 0,
-            base_rp5: 0.0,
-            base_rp5_growth: 0.0,
-            rp5: 0,
-            base_ad: 60.0,
-            base_ad_growth: 5.0,
-            ad: 60,
-            base_as: 0.651,
-            base_as_growth_percent: 0.025,
-            attack_windup: 0.23384,
-            as_: 0.651,
-            as_ratio: 0.651,
-            base_armor: 38.0,
-            base_armor_growth: 4.45,
-            armor: 38.0,
-            bonus_armor: 0.0,
-            base_mr: 32.0,
-            base_mr_growth: 2.05,
-            mr: 32,
-            base_range: 175,
-            range: 175,
-            base_ms: 345,
-            ms: 345,
-            base_crit: 0.0,
-            crit: 0.50,
-            bonus_crit_percent: 0.0,
-            shield_amount: 0.0,
-            magic_shield_amount: 0.0,
-            physical_shield_amount: 0.0,
-            mr_pen: 0,
-            lethality: 0.0,
-            percent_bonus_armor_pen: 0.0,
-            armor_reduction: 0.0,
-            percent_armor_reduction: 0.0,
-            life_steal: 0,
-            spell_vamp: 0,
-            tenacity: 0,
-            limited_use_on_hit_effects: vec![],
-            duration_on_hit_effects: vec![],
-            stacking_on_hit_effects: vec![],
-        },
-        "dummy" => Champion {
-            name: String::from("Dummy"),
-            level: 1,
-            base_health: 10000.0,
-            base_health_growth: 0.0,
-            health: 10000.0,
-            base_hp5: 0.0,
-            base_hp5_growth: 0.0,
-            hp5: 0,
-            base_resource: 0.0,
-            base_resource_growth: 0.0,
-            resource: 0,
-            base_rp5: 0.0,
-            base_rp5_growth: 0.0,
-            rp5: 0,
-            base_ad: 0.0,
-            base_ad_growth: 0.0,
-            ad: 0,
-            base_as: 0.0,
-            base_as_growth_percent: 0.0,
-            attack_windup: 0.0,
-            as_: 0.0,
-            as_ratio: 0.0,
-            base_armor: 0.0,
-            base_armor_growth: 0.0,
-            armor: 0.0,
-            bonus_armor: 0.0,
-            base_mr: 0.0,
-            base_mr_growth: 0.0,
-            mr: 0,
-            base_range: 0,
-            range: 0,
-            base_ms: 0,
-            ms: 0,
-            base_crit: 0.0,
-            crit: 0.0,
-            bonus_crit_percent: 0.0,
-            shield_amount: 0.0,
-            magic_shield_amount: 0.0,
-            physical_shield_amount: 0.0,
-            mr_pen: 0,
-            lethality: 0.0,
-            percent_bonus_armor_pen: 0.0,
-            armor_reduction: 0.0,
-            percent_armor_reduction: 0.0,
-            life_steal: 0,
-            spell_vamp: 0,
-            tenacity: 0,
-            limited_use_on_hit_effects: vec![],
-            duration_on_hit_effects: vec![],
-            stacking_on_hit_effects: vec![],
-        },
-        _ => {
-            panic!("Champion not found: {}", name);
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use crate::champion;
+    use crate::utils::create_champion_by_name;
     use super::*;
 
     #[test]

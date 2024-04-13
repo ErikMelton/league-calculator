@@ -20,4 +20,12 @@ impl Damage {
     pub fn reduce_physical_damage(&mut self, reduction: f32) {
         self.physical_component -= reduction;
     }
+
+    pub fn reduce_magical_damage(&mut self, reduction: f32) {
+        self.magical_component -= reduction;
+    }
+
+    pub fn reduce_true_damage(&mut self, reduction: f32) {
+        self.true_component -= reduction;
+    }
 }
