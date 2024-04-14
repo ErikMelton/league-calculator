@@ -13,4 +13,5 @@ pub struct Item {
     ms: i32,
 
     // TODO: Add effects
+    // TODO: Consider activatable items
 }

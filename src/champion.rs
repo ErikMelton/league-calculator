@@ -1,4 +1,3 @@
-use std::ops::AddAssign;
 use rand::Rng;
 
 use crate::damage::Damage;
@@ -77,7 +76,6 @@ impl Champion {
         self.mr = calculate_base_stat(self.base_mr, 0.0, self.base_mr_growth, level).round();
     }
 
-    /// Take auto attack damage from a source champion, applying crits and on-hit effects
     pub fn take_auto_attack_damage(&mut self, _source: &mut Champion) {
         let effective_armor = self.calculate_armor_reduction(_source);
         let effective_mr = self.calculate_magic_resist_reduction(_source);
@@ -380,7 +378,7 @@ fn calculate_base_stat(base_stat: f32, bonus: f32, growth: f32, n: i32) -> f32 {
 #[cfg(test)]
 mod tests {
     use std::time::Duration;
-    use crate::effects::{DamageType, DoTEffect, LimitedUseOnHitEffect, StackingOnHitEffect, TickRate};
+    use crate::effects::{DamageType, DoTEffect, LimitedUseOnHitEffect, StackingOnHitEffect, EffectTickRate};
     use crate::utils::create_champion_by_name;
 
     #[test]
@@ -680,7 +678,7 @@ mod tests {
     fn test_add_duration_on_hit_effect() {
         let mut champion = create_champion_by_name("test-bruiser");
 
-        let effect = DoTEffect::new("test", 0.0, 100.0, DamageType::Physical, Duration::new(2, 0), TickRate::PerSecond);
+        let effect = DoTEffect::new("test", 0.0, 100.0, DamageType::Physical, Duration::new(2, 0), EffectTickRate::PerSecond);
 
         champion.add_duration_on_hit_effect(effect);
 
@@ -691,8 +689,8 @@ mod tests {
     fn test_add_duplicate_duration_on_hit_effect() {
         let mut champion = create_champion_by_name("test-bruiser");
 
-        let effect = DoTEffect::new("test", 0.0, 100.0, DamageType::Physical, Duration::new(2, 0), TickRate::PerSecond);
-        let effect2 = DoTEffect::new("test", 0.0, 100.0, DamageType::Physical, Duration::new(2, 0), TickRate::PerSecond);
+        let effect = DoTEffect::new("test", 0.0, 100.0, DamageType::Physical, Duration::new(2, 0), EffectTickRate::PerSecond);
+        let effect2 = DoTEffect::new("test", 0.0, 100.0, DamageType::Physical, Duration::new(2, 0), EffectTickRate::PerSecond);
 
         champion.add_duration_on_hit_effect(effect);
         champion.add_duration_on_hit_effect(effect2);
@@ -747,9 +745,9 @@ mod tests {
     fn test_remove_on_hit_effects_duration() {
         let mut champion = create_champion_by_name("test-bruiser");
 
-        let effect = DoTEffect::new("test", 0.0, 100.0, DamageType::Physical, Duration::new(2, 0), TickRate::PerSecond);
-        let effect2 = DoTEffect::new("test2", 0.0, 100.0, DamageType::Physical, Duration::new(2, 0), TickRate::PerSecond);
-        let effect3 = DoTEffect::new("test3", 0.0, 100.0, DamageType::Physical, Duration::new(2, 0), TickRate::PerSecond);
+        let effect = DoTEffect::new("test", 0.0, 100.0, DamageType::Physical, Duration::new(2, 0), EffectTickRate::PerSecond);
+        let effect2 = DoTEffect::new("test2", 0.0, 100.0, DamageType::Physical, Duration::new(2, 0), EffectTickRate::PerSecond);
+        let effect3 = DoTEffect::new("test3", 0.0, 100.0, DamageType::Physical, Duration::new(2, 0), EffectTickRate::PerSecond);
 
         champion.add_duration_on_hit_effect(effect);
         champion.add_duration_on_hit_effect(effect2);

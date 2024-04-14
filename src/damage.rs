@@ -39,3 +39,39 @@ impl Damage {
         self.true_component -= reduction;
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::damage::Damage;
+
+    #[test]
+    fn test_damage() {
+        let mut damage = Damage::new(100.0, 100.0, 100.0);
+        assert_eq!(damage.total(), 300.0);
+
+        damage.reduce_physical_damage(50.0);
+        assert_eq!(damage.total(), 250.0);
+        assert_eq!(damage.physical_component, 50.0);
+
+        damage.reduce_magical_damage(50.0);
+        assert_eq!(damage.total(), 200.0);
+        assert_eq!(damage.magical_component, 50.0);
+
+        damage.reduce_true_damage(50.0);
+        assert_eq!(damage.total(), 150.0);
+        assert_eq!(damage.true_component, 50.0);
+    }
+
+    #[test]
+    fn test_add_assign() {
+        let mut damage1 = super::Damage::new(100.0, 100.0, 100.0);
+        let damage2 = super::Damage::new(50.0, 50.0, 50.0);
+
+        damage1 += damage2;
+
+        assert_eq!(damage1.total(), 450.0);
+        assert_eq!(damage1.physical_component, 150.0);
+        assert_eq!(damage1.magical_component, 150.0);
+        assert_eq!(damage1.true_component, 150.0);
+    }
+}

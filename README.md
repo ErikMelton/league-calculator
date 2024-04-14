@@ -1,4 +1,4 @@
-# Project Name
+# League Simulator
 
 ## About
 
@@ -31,6 +31,7 @@ This will generate the documentation and open it in your web browser.
   - 30 TPS
   - Implement damage over time tick event
 - Consider how to run simulations.
+- Implement abilities
 - Implement the ability rotation and hit chance for both the player and enemy in the scenario module.
 - Consider auto cancels in the scenario module.
 - Implement runes in the main module.
