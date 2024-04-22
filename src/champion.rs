@@ -1,8 +1,10 @@
+use std::collections::HashMap;
 use rand::Rng;
 
 use crate::damage::Damage;
 use crate::effects::{DamageType, DoTEffect, LimitedUseOnHitEffect, StackingOnHitEffect};
 
+#[derive(Clone)]
 pub struct Champion {
     pub(crate) name: String,
     pub(crate) level: i32,
@@ -24,7 +26,7 @@ pub struct Champion {
     pub(crate) base_as: f32,
     pub(crate) base_as_growth_percent: f32,
     pub(crate) attack_windup: f32,
-    pub(crate) as_: f32,
+    pub(crate) as_: f32, // TODO: Consider the attack speed cap / exceeding the cap
     pub(crate) as_ratio: f32,
     pub(crate) base_armor: f32,
     pub(crate) base_armor_growth: f32,
@@ -33,6 +35,7 @@ pub struct Champion {
     pub(crate) base_mr: f32,
     pub(crate) base_mr_growth: f32,
     pub(crate) mr: f32,
+    pub(crate) bonus_mr: f32,
     pub(crate) base_range: i32,
     pub(crate) range: i32,
     pub(crate) base_ms: i32,
@@ -55,28 +58,30 @@ pub struct Champion {
     pub(crate) life_steal: i32,
     pub(crate) spell_vamp: i32,
     pub(crate) tenacity: i32,
-    pub(crate) limited_use_on_hit_effects: Vec<LimitedUseOnHitEffect>,
-    pub(crate) duration_on_hit_effects: Vec<DoTEffect>,
-    pub(crate) stacking_on_hit_effects: Vec<StackingOnHitEffect>,
+    pub(crate) friendly_limited_use_on_hit_effects: HashMap<String, LimitedUseOnHitEffect>,
+    pub(crate) friendly_duration_on_hit_effects: HashMap<String, DoTEffect>,
+    pub(crate) friendly_stacking_on_hit_effects: HashMap<String, StackingOnHitEffect>,
+    pub(crate) enemy_duration_on_hit_effects: HashMap<String, DoTEffect>,
+    pub(crate) enemy_stacking_on_hit_effects: HashMap<String, StackingOnHitEffect>,
 }
 
-// TODO: Implement damage over time tick event
 impl Champion {
     /// Set the level of the champion. This will recalculate the base stats of the champion based on
     /// the level supplied.
     pub fn set_level(&mut self, level: i32) {
         self.level = level;
+        // TODO: Bonus values from items, runes, etc.
         self.health = calculate_base_stat(self.base_health, 0.0, self.base_health_growth, level).round();
         self.hp5 = calculate_base_stat(self.base_hp5, 0.0, self.base_hp5_growth, level).round() as i32;
         self.resource = calculate_base_stat(self.base_resource, 0.0, self.base_resource_growth, level).round() as i32;
         self.rp5 = calculate_base_stat(self.base_rp5, 0.0, self.base_rp5_growth, level).round() as i32;
         self.ad = calculate_base_stat(self.base_ad, 0.0, self.base_ad_growth, level).round() as i32;
         self.as_ = calculate_attack_speed(self.base_as, self.as_ratio, self.base_as_growth_percent, 0.25, level);
-        self.armor = calculate_base_stat(self.base_armor, 0.0, self.base_armor_growth, level).round();
-        self.mr = calculate_base_stat(self.base_mr, 0.0, self.base_mr_growth, level).round();
+        self.armor = calculate_base_stat(self.base_armor, self.bonus_armor, self.base_armor_growth, level).round();
+        self.mr = calculate_base_stat(self.base_mr, self.bonus_mr, self.base_mr_growth, level).round();
     }
 
-    pub fn take_auto_attack_damage(&mut self, _source: &mut Champion) {
+    pub fn take_auto_attack_damage(&mut self, _source: &mut Champion) -> Damage {
         let effective_armor = self.calculate_armor_reduction(_source);
         let effective_mr = self.calculate_magic_resist_reduction(_source);
 
@@ -95,42 +100,90 @@ impl Champion {
         _source.decrement_limited_use_on_hit_effects();
 
         println!("Remaining health: {}", self.health);
+
+        aa_damage
     }
 
-    pub fn add_limited_use_on_hit_effect(&mut self, effect: LimitedUseOnHitEffect) {
-        if self.limited_use_on_hit_effects.iter().any(|e| e.id == effect.id) {
+    pub fn apply_enemy_duration_on_hit_effect(&mut self, effect: DoTEffect) {
+        if self.enemy_duration_on_hit_effects.get(&effect.id).is_some() {
+            self.enemy_duration_on_hit_effects.get_mut(&effect.id).unwrap().damage_time_left = effect.damage_time_left;
+
             return;
         }
 
-        self.limited_use_on_hit_effects.push(effect);
+        self.enemy_duration_on_hit_effects.insert(effect.id.to_string(), effect);
     }
 
-    pub fn add_duration_on_hit_effect(&mut self, effect: DoTEffect) {
-        if self.duration_on_hit_effects.iter().any(|e| e.id == effect.id) {
+    pub fn apply_enemy_stacking_on_hit_effect(&mut self, effect: StackingOnHitEffect) {
+        if self.enemy_stacking_on_hit_effects.get(&effect.id).is_some() && self.enemy_stacking_on_hit_effects.get(&effect.id).unwrap().current_stacks < effect.max_stacks {
+            self.enemy_stacking_on_hit_effects.get_mut(&effect.id).unwrap().current_stacks += 1;
+
             return;
         }
 
-        self.duration_on_hit_effects.push(effect);
+        self.enemy_stacking_on_hit_effects.insert(effect.id.to_string(), effect);
     }
 
-    pub fn add_stacking_on_hit_effect(&mut self, effect: StackingOnHitEffect) {
-        if self.stacking_on_hit_effects.iter().any(|e| e.id == effect.id) {
+    pub fn take_dot_damage(&mut self, _source: &mut Champion) -> Damage {
+        // TODO: Take into consideration item changes in armor + bonus mr (?)
+        let effective_armor = self.armor + self.bonus_armor;
+        let effective_mr = self.mr + self.bonus_mr;
+
+        let mut dot_damage = Damage::new(0.0, 0.0, 0.0);
+
+        for (_, effect) in &_source.enemy_duration_on_hit_effects {
+            match effect.damage_type {
+                DamageType::Physical => {
+                    dot_damage.physical_component = self.calculate_physical_damage_taken(effective_armor, effect.damage_over_time);
+                }
+                DamageType::Magical => {
+                    dot_damage.magical_component = self.calculate_magical_damage_taken(effective_mr, effect.damage_over_time);
+                }
+                DamageType::True => {
+                    dot_damage.true_component += effect.damage_over_time;
+                }
+            }
+        }
+
+        self.take_damage(dot_damage);
+
+        dot_damage
+    }
+
+    pub fn add_friendly_limited_use_on_hit_effect(&mut self, effect: LimitedUseOnHitEffect) {
+        if self.friendly_limited_use_on_hit_effects.get(&effect.id).is_some() {
             return;
         }
 
-        self.stacking_on_hit_effects.push(effect);
+        self.friendly_limited_use_on_hit_effects.insert(effect.id.to_string(), effect);
+    }
+
+    pub fn add_friendly_duration_on_hit_effect(&mut self, effect: DoTEffect) {
+        if self.friendly_duration_on_hit_effects.get(&effect.id).is_some() {
+            return;
+        }
+
+        self.friendly_duration_on_hit_effects.insert(effect.id.to_string(), effect);
+    }
+
+    pub fn add_friendly_stacking_on_hit_effect(&mut self, effect: StackingOnHitEffect) {
+        if self.friendly_stacking_on_hit_effects.get(&effect.id).is_some() {
+            return;
+        }
+
+        self.friendly_stacking_on_hit_effects.insert(effect.id.to_string(), effect);
     }
 
     pub fn remove_on_hit_effect(&mut self, id: &str) {
-        self.limited_use_on_hit_effects.retain(|effect| effect.id != id);
-        self.duration_on_hit_effects.retain(|effect| effect.id != id);
-        self.stacking_on_hit_effects.retain(|effect| effect.id != id);
+        self.friendly_limited_use_on_hit_effects.remove(id);
+        self.friendly_duration_on_hit_effects.remove(id);
+        self.friendly_stacking_on_hit_effects.remove(id);
     }
 
     fn calculate_on_hit_damage(&mut self, _source: &Champion) -> Damage {
         let mut damage = Damage::new(0.0, 0.0, 0.0);
 
-        for effect in &_source.limited_use_on_hit_effects {
+        for (_, effect) in &_source.friendly_limited_use_on_hit_effects {
             if effect.num_uses > 0 {
                 match effect.damage_type {
                     DamageType::Physical => {
@@ -151,7 +204,7 @@ impl Champion {
     }
 
     fn decrement_limited_use_on_hit_effects(&mut self) {
-        for effect in &mut self.limited_use_on_hit_effects {
+        for (_, effect) in &mut self.friendly_limited_use_on_hit_effects {
             if effect.num_uses > 0 {
                 effect.num_uses -= 1;
             }
@@ -196,7 +249,7 @@ impl Champion {
     }
 
     fn calculate_magic_resist_reduction(&self, _source: &Champion) -> f32 {
-        let mut mr = self.mr;
+        let mut mr = self.mr + self.bonus_mr;
 
         if mr == 0.0 {
             return 0.0;
@@ -408,7 +461,7 @@ mod tests {
 
     #[test]
     fn test_calculate_crit_damage_multiplier_from_target() {
-        let mut champion = create_champion_by_name("test-bruiser");
+        let champion = create_champion_by_name("test-bruiser");
         let mut source = create_champion_by_name("test-bruiser");
 
         assert_eq!(champion.calculate_crit_damage_multiplier_from_target(&source), 1.0);
@@ -544,7 +597,7 @@ mod tests {
 
     #[test]
     fn test_calculate_physical_damage_taken() {
-        let mut champion = create_champion_by_name("test-bruiser");
+        let champion = create_champion_by_name("test-bruiser");
         let effective_armor = 25.0;
         let damage = 1000.0;
 
@@ -565,7 +618,7 @@ mod tests {
 
     #[test]
     fn test_calculate_magic_damage_taken() {
-        let mut champion = create_champion_by_name("test-bruiser");
+        let champion = create_champion_by_name("test-bruiser");
         let effective_mr = 25.0;
         let damage = 1000.0;
 
@@ -654,148 +707,152 @@ mod tests {
     fn test_add_limited_use_on_hit_effect() {
         let mut champion = create_champion_by_name("test-bruiser");
 
-        let effect = LimitedUseOnHitEffect::new("test", 100.0, DamageType::Physical, 1);
+        let effect = LimitedUseOnHitEffect::new("test", 100.0, DamageType::Physical, 1, Duration::from_secs(10), true);
 
-        champion.add_limited_use_on_hit_effect(effect);
+        champion.add_friendly_limited_use_on_hit_effect(effect);
 
-        assert_eq!(champion.limited_use_on_hit_effects.len(), 1);
+        assert_eq!(champion.friendly_limited_use_on_hit_effects.len(), 1);
     }
 
     #[test]
     fn test_add_duplicate_limited_use_on_hit_effect() {
         let mut champion = create_champion_by_name("test-bruiser");
 
-        let effect = LimitedUseOnHitEffect::new("test", 100.0, DamageType::Physical, 1);
-        let effect2 = LimitedUseOnHitEffect::new("test", 100.0, DamageType::Physical, 1);
+        let effect = LimitedUseOnHitEffect::new("test", 100.0, DamageType::Physical, 1, Duration::from_secs(10), true);
+        let effect2 = LimitedUseOnHitEffect::new("test", 100.0, DamageType::Physical, 1, Duration::from_secs(10), true);
 
-        champion.add_limited_use_on_hit_effect(effect);
-        champion.add_limited_use_on_hit_effect(effect2);
+        champion.add_friendly_limited_use_on_hit_effect(effect);
+        champion.add_friendly_limited_use_on_hit_effect(effect2);
 
-        assert_eq!(champion.limited_use_on_hit_effects.len(), 1);
+        assert_eq!(champion.friendly_limited_use_on_hit_effects.len(), 1);
     }
 
     #[test]
     fn test_add_duration_on_hit_effect() {
         let mut champion = create_champion_by_name("test-bruiser");
 
-        let effect = DoTEffect::new("test", 0.0, 100.0, DamageType::Physical, Duration::new(2, 0), EffectTickRate::PerSecond);
+        let effect = DoTEffect::new("test", 100.0, DamageType::Physical, Duration::new(2, 0), EffectTickRate::PerSecond, Duration::new(10, 0), true);
 
-        champion.add_duration_on_hit_effect(effect);
+        champion.add_friendly_duration_on_hit_effect(effect);
 
-        assert_eq!(champion.duration_on_hit_effects.len(), 1);
+        assert_eq!(champion.friendly_duration_on_hit_effects.len(), 1);
     }
 
     #[test]
     fn test_add_duplicate_duration_on_hit_effect() {
         let mut champion = create_champion_by_name("test-bruiser");
 
-        let effect = DoTEffect::new("test", 0.0, 100.0, DamageType::Physical, Duration::new(2, 0), EffectTickRate::PerSecond);
-        let effect2 = DoTEffect::new("test", 0.0, 100.0, DamageType::Physical, Duration::new(2, 0), EffectTickRate::PerSecond);
+        let effect = DoTEffect::new("test", 100.0, DamageType::Physical, Duration::new(2, 0), EffectTickRate::PerSecond, Duration::new(10, 0), true);
+        let effect2 = DoTEffect::new("test", 100.0, DamageType::Physical, Duration::new(2, 0), EffectTickRate::PerSecond, Duration::new(10, 0), true);
 
-        champion.add_duration_on_hit_effect(effect);
-        champion.add_duration_on_hit_effect(effect2);
+        champion.add_friendly_duration_on_hit_effect(effect);
+        champion.add_friendly_duration_on_hit_effect(effect2);
 
-        assert_eq!(champion.duration_on_hit_effects.len(), 1);
+        assert_eq!(champion.friendly_duration_on_hit_effects.len(), 1);
     }
 
     #[test]
     fn test_add_stacking_on_hit_effect() {
         let mut champion = create_champion_by_name("test-bruiser");
 
-        let effect = StackingOnHitEffect::new("test", 10.0, 5.0, DamageType::Physical, 100, Duration::new(2, 0));
+        let effect = StackingOnHitEffect::new("test", 5.0, DamageType::Physical, 100, Duration::new(2, 0), Duration::from_secs(10), true);
 
-        champion.add_stacking_on_hit_effect(effect);
+        champion.add_friendly_stacking_on_hit_effect(effect);
 
-        assert_eq!(champion.stacking_on_hit_effects.len(), 1);
+        assert_eq!(champion.friendly_stacking_on_hit_effects.len(), 1);
     }
 
     #[test]
     fn test_add_duplicate_stacking_on_hit_effect() {
         let mut champion = create_champion_by_name("test-bruiser");
 
-        let effect = StackingOnHitEffect::new("test", 10.0, 5.0, DamageType::Physical, 100, Duration::new(2, 0));
-        let effect2 = StackingOnHitEffect::new("test", 10.0, 5.0, DamageType::Physical, 100, Duration::new(2, 0));
+        let effect = StackingOnHitEffect::new("test", 5.0, DamageType::Physical, 100, Duration::new(2, 0), Duration::from_secs(10), true);
+        let effect2 = StackingOnHitEffect::new("test", 5.0, DamageType::Physical, 100, Duration::new(2, 0), Duration::from_secs(10), true);
 
-        champion.add_stacking_on_hit_effect(effect);
-        champion.add_stacking_on_hit_effect(effect2);
+        champion.add_friendly_stacking_on_hit_effect(effect);
+        champion.add_friendly_stacking_on_hit_effect(effect2);
 
-        assert_eq!(champion.stacking_on_hit_effects.len(), 1);
+        assert_eq!(champion.friendly_stacking_on_hit_effects.len(), 1);
     }
 
     #[test]
     fn test_remove_limited_use_on_hit_effects() {
         let mut champion = create_champion_by_name("test-bruiser");
 
-        let effect = LimitedUseOnHitEffect::new("test", 100.0, DamageType::Physical, 1);
-        let effect2 = LimitedUseOnHitEffect::new("test2", 100.0, DamageType::Physical, 1);
-        let effect3 = LimitedUseOnHitEffect::new("test3", 100.0, DamageType::Physical, 1);
+        let effect = LimitedUseOnHitEffect::new("test", 100.0, DamageType::Physical, 1, Duration::from_secs(10), true);
+        let effect2 = LimitedUseOnHitEffect::new("test2", 100.0, DamageType::Physical, 1, Duration::from_secs(10), true);
+        let effect3 = LimitedUseOnHitEffect::new("test3", 100.0, DamageType::Physical, 1, Duration::from_secs(10), true);
 
-        champion.add_limited_use_on_hit_effect(effect);
-        champion.add_limited_use_on_hit_effect(effect2);
-        champion.add_limited_use_on_hit_effect(effect3);
+        champion.add_friendly_limited_use_on_hit_effect(effect);
+        champion.add_friendly_limited_use_on_hit_effect(effect2);
+        champion.add_friendly_limited_use_on_hit_effect(effect3);
 
         champion.remove_on_hit_effect("test2");
 
-        assert_eq!(champion.limited_use_on_hit_effects.len(), 2);
-        assert_eq!(champion.limited_use_on_hit_effects[0].id, "test");
-        assert_eq!(champion.limited_use_on_hit_effects[1].id, "test3");
+        assert_eq!(champion.friendly_limited_use_on_hit_effects.len(), 2);
+        assert_eq!(champion.friendly_limited_use_on_hit_effects.get("test2"), None);
+        assert!(champion.friendly_limited_use_on_hit_effects.get("test").is_some());
+        assert!(champion.friendly_limited_use_on_hit_effects.get("test3").is_some());
     }
 
     #[test]
     fn test_remove_on_hit_effects_duration() {
         let mut champion = create_champion_by_name("test-bruiser");
 
-        let effect = DoTEffect::new("test", 0.0, 100.0, DamageType::Physical, Duration::new(2, 0), EffectTickRate::PerSecond);
-        let effect2 = DoTEffect::new("test2", 0.0, 100.0, DamageType::Physical, Duration::new(2, 0), EffectTickRate::PerSecond);
-        let effect3 = DoTEffect::new("test3", 0.0, 100.0, DamageType::Physical, Duration::new(2, 0), EffectTickRate::PerSecond);
+        let effect = DoTEffect::new("test", 100.0, DamageType::Physical, Duration::new(2, 0), EffectTickRate::PerSecond, Duration::new(10, 0), true);
+        let effect2 = DoTEffect::new("test2", 100.0, DamageType::Physical, Duration::new(2, 0), EffectTickRate::PerSecond, Duration::new(10, 0), true);
+        let effect3 = DoTEffect::new("test3", 100.0, DamageType::Physical, Duration::new(2, 0), EffectTickRate::PerSecond, Duration::new(10, 0), true);
 
-        champion.add_duration_on_hit_effect(effect);
-        champion.add_duration_on_hit_effect(effect2);
-        champion.add_duration_on_hit_effect(effect3);
+        champion.add_friendly_duration_on_hit_effect(effect);
+        champion.add_friendly_duration_on_hit_effect(effect2);
+        champion.add_friendly_duration_on_hit_effect(effect3);
 
         champion.remove_on_hit_effect("test2");
 
-        assert_eq!(champion.duration_on_hit_effects.len(), 2);
-        assert_eq!(champion.duration_on_hit_effects[0].id, "test");
-        assert_eq!(champion.duration_on_hit_effects[1].id, "test3");
+        assert_eq!(champion.friendly_duration_on_hit_effects.len(), 2);
+        assert_eq!(champion.friendly_duration_on_hit_effects.get("test2"), None);
+        assert!(champion.friendly_duration_on_hit_effects.get("test").is_some());
+        assert!(champion.friendly_duration_on_hit_effects.get("test3").is_some());
     }
 
     #[test]
     fn test_remove_on_hit_effects_stacking() {
         let mut champion = create_champion_by_name("test-bruiser");
 
-        let effect = StackingOnHitEffect::new("test", 10.0, 5.0, DamageType::Physical, 100, Duration::new(2, 0));
-        let effect2 = StackingOnHitEffect::new("test2", 10.0, 5.0, DamageType::Physical, 100, Duration::new(2, 0));
-        let effect3 = StackingOnHitEffect::new("test3", 10.0, 5.0, DamageType::Physical, 100, Duration::new(2, 0));
+        let effect = StackingOnHitEffect::new("test", 5.0, DamageType::Physical, 100, Duration::new(2, 0), Duration::from_secs(10), true);
+        let effect2 = StackingOnHitEffect::new("test2", 5.0, DamageType::Physical, 100, Duration::new(2, 0), Duration::from_secs(10), true);
+        let effect3 = StackingOnHitEffect::new("test3", 5.0, DamageType::Physical, 100, Duration::new(2, 0), Duration::from_secs(10), true);
 
-        champion.add_stacking_on_hit_effect(effect);
-        champion.add_stacking_on_hit_effect(effect2);
-        champion.add_stacking_on_hit_effect(effect3);
+        champion.add_friendly_stacking_on_hit_effect(effect);
+        champion.add_friendly_stacking_on_hit_effect(effect2);
+        champion.add_friendly_stacking_on_hit_effect(effect3);
 
         champion.remove_on_hit_effect("test2");
 
-        assert_eq!(champion.stacking_on_hit_effects.len(), 2);
-        assert_eq!(champion.stacking_on_hit_effects[0].id, "test");
-        assert_eq!(champion.stacking_on_hit_effects[1].id, "test3");
+        assert_eq!(champion.friendly_stacking_on_hit_effects.len(), 2);
+        assert_eq!(champion.friendly_stacking_on_hit_effects.get("test2"), None);
+        assert!(champion.friendly_stacking_on_hit_effects.get("test").is_some());
+        assert!(champion.friendly_stacking_on_hit_effects.get("test3").is_some());
     }
 
     #[test]
     fn test_decrement_limited_use_on_hit_effects() {
         let mut champion = create_champion_by_name("test-bruiser");
 
-        let effect = LimitedUseOnHitEffect::new("test", 100.0, DamageType::Physical, 1);
-        let effect2 = LimitedUseOnHitEffect::new("test2", 100.0, DamageType::Physical, 2);
-        let effect3 = LimitedUseOnHitEffect::new("test3", 100.0, DamageType::Physical, 0);
+        let effect = LimitedUseOnHitEffect::new("test", 100.0, DamageType::Physical, 1, Duration::from_secs(10), true);
+        let effect2 = LimitedUseOnHitEffect::new("test2", 100.0, DamageType::Physical, 2, Duration::from_secs(10), true);
+        let effect3 = LimitedUseOnHitEffect::new("test3", 100.0, DamageType::Physical, 0, Duration::from_secs(10), true);
 
-        champion.add_limited_use_on_hit_effect(effect);
-        champion.add_limited_use_on_hit_effect(effect2);
-        champion.add_limited_use_on_hit_effect(effect3);
+        champion.add_friendly_limited_use_on_hit_effect(effect);
+        champion.add_friendly_limited_use_on_hit_effect(effect2);
+        champion.add_friendly_limited_use_on_hit_effect(effect3);
 
         champion.decrement_limited_use_on_hit_effects();
 
-        assert_eq!(champion.limited_use_on_hit_effects[0].num_uses, 0);
-        assert_eq!(champion.limited_use_on_hit_effects[1].num_uses, 1);
-        assert_eq!(champion.limited_use_on_hit_effects[2].num_uses, 0);
+        assert_eq!(champion.friendly_limited_use_on_hit_effects.len(), 3);
+        assert_eq!(champion.friendly_limited_use_on_hit_effects.get("test").unwrap().num_uses, 0);
+        assert_eq!(champion.friendly_limited_use_on_hit_effects.get("test2").unwrap().num_uses, 1);
+        assert_eq!(champion.friendly_limited_use_on_hit_effects.get("test3").unwrap().num_uses, 0);
     }
 
     #[test]
@@ -803,17 +860,17 @@ mod tests {
         let mut champion = create_champion_by_name("test-bruiser");
         let mut source = create_champion_by_name("test-bruiser");
 
-        let effect = LimitedUseOnHitEffect::new("test", 100.0, DamageType::Physical, 1);
-        let effect2 = LimitedUseOnHitEffect::new("test2", 100.0, DamageType::Physical, 2);
-        let effect3 = LimitedUseOnHitEffect::new("test3", 100.0, DamageType::Physical, 0);
-        let effect4 = LimitedUseOnHitEffect::new("test4", 100.0, DamageType::Magical, 1);
-        let effect5 = LimitedUseOnHitEffect::new("test5", 100.0, DamageType::True, 1);
+        let effect = LimitedUseOnHitEffect::new("test", 100.0, DamageType::Physical, 1, Duration::from_secs(10), true);
+        let effect2 = LimitedUseOnHitEffect::new("test2", 100.0, DamageType::Physical, 2, Duration::from_secs(10), true);
+        let effect3 = LimitedUseOnHitEffect::new("test3", 100.0, DamageType::Physical, 0, Duration::from_secs(10), true);
+        let effect4 = LimitedUseOnHitEffect::new("test4", 100.0, DamageType::Magical, 1, Duration::from_secs(10), true);
+        let effect5 = LimitedUseOnHitEffect::new("test5", 100.0, DamageType::True, 1, Duration::from_secs(10), true);
 
-        source.add_limited_use_on_hit_effect(effect);
-        source.add_limited_use_on_hit_effect(effect2);
-        source.add_limited_use_on_hit_effect(effect3);
-        source.add_limited_use_on_hit_effect(effect4);
-        source.add_limited_use_on_hit_effect(effect5);
+        source.add_friendly_limited_use_on_hit_effect(effect);
+        source.add_friendly_limited_use_on_hit_effect(effect2);
+        source.add_friendly_limited_use_on_hit_effect(effect3);
+        source.add_friendly_limited_use_on_hit_effect(effect4);
+        source.add_friendly_limited_use_on_hit_effect(effect5);
 
         let damage = champion.calculate_on_hit_damage(&source);
 
@@ -824,7 +881,7 @@ mod tests {
 
     #[test]
     fn test_calculate_physical_damage_taken_from_aa_no_armor() {
-        let mut champion = create_champion_by_name("test-bruiser");
+        let champion = create_champion_by_name("test-bruiser");
         let source = create_champion_by_name("test-bruiser");
 
         let damage = champion.calculate_physical_damage_taken_from_aa(0.0, &source);
@@ -834,7 +891,7 @@ mod tests {
 
     #[test]
     fn test_calculate_physical_damage_taken_from_aa_with_armor() {
-        let mut champion = create_champion_by_name("test-bruiser");
+        let champion = create_champion_by_name("test-bruiser");
         let source = create_champion_by_name("test-bruiser");
 
         let damage = champion.calculate_physical_damage_taken_from_aa(100.0, &source);
@@ -844,7 +901,7 @@ mod tests {
 
     #[test]
     fn test_calculate_physical_damage_taken_from_aa_crit() {
-        let mut champion = create_champion_by_name("test-bruiser");
+        let champion = create_champion_by_name("test-bruiser");
         let mut source = create_champion_by_name("test-bruiser");
 
         source.crit = 1.0;

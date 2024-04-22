@@ -1,5 +1,6 @@
 use std::ops::AddAssign;
 
+#[derive(Clone, Copy)]
 pub struct Damage {
     pub(crate) physical_component: f32,
     pub(crate) magical_component: f32,

@@ -37,3 +37,4 @@ This will generate the documentation and open it in your web browser.
 - Implement runes in the main module.
 - Implement items
 - Write a system to automate the creation and updating of champions, runes, abilities, and items.
+- Need some kind of logging system for exporting the action data to a file.
