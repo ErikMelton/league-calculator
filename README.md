@@ -26,10 +26,10 @@ cargo doc --open
 This will generate the documentation and open it in your web browser.
 
 ## TODO
- 
+
 - Implement the simulation module.
-  - 30 TPS
-  - Implement damage over time tick event
+  - Test damage over time
+  - Implement stacking damage over time
 - Consider how to run simulations.
 - Implement abilities
 - Implement the ability rotation and hit chance for both the player and enemy in the scenario module.

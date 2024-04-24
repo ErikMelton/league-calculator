@@ -1,4 +1,4 @@
-use std::ops::AddAssign;
+use std::ops::{Add, AddAssign};
 
 #[derive(Clone, Copy)]
 pub struct Damage {
@@ -9,9 +9,21 @@ pub struct Damage {
 
 impl AddAssign for Damage {
     fn add_assign(&mut self, rhs: Self) {
-        self.physical_component += rhs.physical_component;
-        self.magical_component += rhs.magical_component;
-        self.true_component += rhs.true_component;
+        self.physical_component = self.physical_component + rhs.physical_component;
+        self.magical_component = self.magical_component + rhs.magical_component;
+        self.true_component = self.true_component + rhs.true_component;
+    }
+}
+
+impl Add for Damage {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self {
+        Damage {
+            physical_component: self.physical_component + rhs.physical_component,
+            magical_component: self.magical_component + rhs.magical_component,
+            true_component: self.true_component + rhs.true_component,
+        }
     }
 }
 
@@ -65,8 +77,8 @@ mod tests {
 
     #[test]
     fn test_add_assign() {
-        let mut damage1 = super::Damage::new(100.0, 100.0, 100.0);
-        let damage2 = super::Damage::new(50.0, 50.0, 50.0);
+        let mut damage1 = Damage::new(100.0, 100.0, 100.0);
+        let damage2 = Damage::new(50.0, 50.0, 50.0);
 
         damage1 += damage2;
 
@@ -74,5 +86,18 @@ mod tests {
         assert_eq!(damage1.physical_component, 150.0);
         assert_eq!(damage1.magical_component, 150.0);
         assert_eq!(damage1.true_component, 150.0);
+    }
+
+    #[test]
+    fn test_add() {
+        let damage1 = Damage::new(100.0, 100.0, 100.0);
+        let damage2 = Damage::new(50.0, 50.0, 50.0);
+
+        let damage3 = damage1 + damage2;
+
+        assert_eq!(damage3.total(), 450.0);
+        assert_eq!(damage3.physical_component, 150.0);
+        assert_eq!(damage3.magical_component, 150.0);
+        assert_eq!(damage3.true_component, 150.0);
     }
 }

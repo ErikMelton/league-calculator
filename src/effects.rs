@@ -67,7 +67,7 @@ impl StackingOnHitEffect {
         self.current_stacks = current_stacks;
     }
 
-    pub fn set_time_left(&mut self, time_left: Duration) {
+    pub fn set_damage_time_left(&mut self, time_left: Duration) {
         self.damage_time_left = time_left;
     }
 
@@ -102,12 +102,20 @@ impl DoTEffect {
         }
     }
 
-    pub fn set_time_left(&mut self, time_left: Duration) {
+    pub fn set_damage_time_left(&mut self, time_left: Duration) {
         self.damage_time_left = time_left;
     }
 
-    pub fn reduce_time_left(&mut self, time: Duration) {
+    pub fn reduce_damage_time_left(&mut self, time: Duration) {
         self.damage_time_left -= time;
+    }
+
+    pub fn set_effect_time_left(&mut self, time_left: Duration) {
+        self.effect_time_left = time_left;
+    }
+
+    pub fn reduce_effect_time_left(&mut self, time: Duration) {
+        self.effect_time_left -= time;
     }
 }
 
@@ -215,7 +223,7 @@ mod tests {
     #[test]
     fn test_dot_effect_set_time_left() {
         let mut dot_effect = DoTEffect::new("burn", 5.0, DamageType::Magical, Duration::from_secs(5), EffectTickRate::PerSecond, Duration::from_secs(10), true);
-        dot_effect.set_time_left(Duration::from_secs(10));
+        dot_effect.set_damage_time_left(Duration::from_secs(10));
 
         assert_eq!(dot_effect.damage_time_left, Duration::from_secs(10));
     }
@@ -223,7 +231,7 @@ mod tests {
     #[test]
     fn test_dot_effect_reduce_time_left() {
         let mut dot_effect = DoTEffect::new("burn",  5.0, DamageType::Magical, Duration::from_secs(5), EffectTickRate::PerSecond, Duration::from_secs(10), true);
-        dot_effect.reduce_time_left(Duration::from_secs(2));
+        dot_effect.reduce_damage_time_left(Duration::from_secs(2));
 
         assert_eq!(dot_effect.damage_time_left, Duration::from_secs(3));
     }
@@ -269,7 +277,7 @@ mod tests {
     #[test]
     fn test_stacking_on_hit_effect_set_time_left() {
         let mut stacking_on_hit_effect = StackingOnHitEffect::new("test", 5.0, DamageType::True, 5, Duration::from_secs(5), Duration::from_secs(10), true);
-        stacking_on_hit_effect.set_time_left(Duration::from_secs(10));
+        stacking_on_hit_effect.set_damage_time_left(Duration::from_secs(10));
 
         assert_eq!(stacking_on_hit_effect.damage_time_left, Duration::from_secs(10));
     }

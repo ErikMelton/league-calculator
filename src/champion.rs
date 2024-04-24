@@ -1,5 +1,7 @@
 use std::collections::HashMap;
+use std::time::Duration;
 use rand::Rng;
+use crate::constants::TICK_SECOND;
 
 use crate::damage::Damage;
 use crate::effects::{DamageType, DoTEffect, LimitedUseOnHitEffect, StackingOnHitEffect};
@@ -124,24 +126,52 @@ impl Champion {
         self.enemy_stacking_on_hit_effects.insert(effect.id.to_string(), effect);
     }
 
-    pub fn take_dot_damage(&mut self, _source: &mut Champion) -> Damage {
+    pub fn calculate_and_apply_dot_effects(&mut self, tick: i32) -> Damage {
+        let mut total_dot_damage = Damage::new(0.0, 0.0, 0.0);
+        let mut dots_to_take = Vec::new();
+
+        for (id, effect) in self.enemy_duration_on_hit_effects.iter_mut() {
+            if tick % &effect.tick_rate == 0 {
+                dots_to_take.push(id.to_string());
+            }
+
+            effect.effect_time_left -= Duration::from_secs_f32(TICK_SECOND);
+        }
+
+        for id in dots_to_take {
+            total_dot_damage += self.take_dot_damage(&id);
+        }
+
+        // TODO: Apply armor reduction and other stat burn effects
+
+        total_dot_damage
+    }
+
+     fn take_dot_damage(&mut self, id: &String) -> Damage {
         // TODO: Take into consideration item changes in armor + bonus mr (?)
         let effective_armor = self.armor + self.bonus_armor;
         let effective_mr = self.mr + self.bonus_mr;
 
         let mut dot_damage = Damage::new(0.0, 0.0, 0.0);
 
-        for (_, effect) in &_source.enemy_duration_on_hit_effects {
-            match effect.damage_type {
-                DamageType::Physical => {
-                    dot_damage.physical_component = self.calculate_physical_damage_taken(effective_armor, effect.damage_over_time);
+        let effect = self.enemy_duration_on_hit_effects.get(id);
+
+        match effect {
+            Some(effect) => {
+                match effect.damage_type {
+                    DamageType::Physical => {
+                        dot_damage.physical_component = self.calculate_physical_damage_taken(effective_armor, effect.damage_over_time);
+                    }
+                    DamageType::Magical => {
+                        dot_damage.magical_component = self.calculate_magical_damage_taken(effective_mr, effect.damage_over_time);
+                    }
+                    DamageType::True => {
+                        dot_damage.true_component += effect.damage_over_time;
+                    }
                 }
-                DamageType::Magical => {
-                    dot_damage.magical_component = self.calculate_magical_damage_taken(effective_mr, effect.damage_over_time);
-                }
-                DamageType::True => {
-                    dot_damage.true_component += effect.damage_over_time;
-                }
+            }
+            None => {
+                return dot_damage;
             }
         }
 
@@ -208,6 +238,76 @@ impl Champion {
             if effect.num_uses > 0 {
                 effect.num_uses -= 1;
             }
+        }
+    }
+
+    pub fn decrement_own_effect_time_left(&mut self) {
+        let mut duration_effects_to_remove = Vec::new();
+        let mut stacking_effects_to_remove = Vec::new();
+
+        for (id, effect) in self.friendly_duration_on_hit_effects.iter_mut() {
+            if effect.effect_time_left <= Duration::from_secs(0) {
+                duration_effects_to_remove.push(id.to_string());
+                continue;
+            }
+
+            if effect.finite_time_left {
+                effect.reduce_effect_time_left(Duration::from_secs_f32(TICK_SECOND));
+            }
+        }
+
+        for id in duration_effects_to_remove {
+            self.friendly_duration_on_hit_effects.remove(&id);
+        }
+
+        for (id, effect) in self.friendly_stacking_on_hit_effects.iter_mut() {
+            if effect.effect_time_left <= Duration::from_secs(0) {
+                stacking_effects_to_remove.push(id.to_string());
+                continue;
+            }
+
+            if effect.finite_time_left {
+                effect.reduce_effect_time_left(Duration::from_secs_f32(TICK_SECOND));
+            }
+        }
+
+        for id in stacking_effects_to_remove {
+            self.friendly_stacking_on_hit_effects.remove(&id);
+        }
+    }
+
+    pub fn decrement_enemy_effect_time_left(&mut self) {
+        let mut duration_effects_to_remove = Vec::new();
+        let mut stacking_effects_to_remove = Vec::new();
+
+        for (id, effect) in self.enemy_duration_on_hit_effects.iter_mut() {
+            if effect.effect_time_left <= Duration::from_secs(0) {
+                duration_effects_to_remove.push(id.to_string());
+                continue;
+            }
+
+            if effect.finite_time_left {
+                effect.reduce_effect_time_left(Duration::from_secs_f32(TICK_SECOND));
+            }
+        }
+
+        for id in duration_effects_to_remove {
+            self.enemy_duration_on_hit_effects.remove(&id);
+        }
+
+        for (id, effect) in self.enemy_stacking_on_hit_effects.iter_mut() {
+            if effect.effect_time_left <= Duration::from_secs(0) {
+                stacking_effects_to_remove.push(id.to_string());
+                continue;
+            }
+
+            if effect.finite_time_left {
+                effect.reduce_effect_time_left(Duration::from_secs_f32(TICK_SECOND));
+            }
+        }
+
+        for id in stacking_effects_to_remove {
+            self.enemy_stacking_on_hit_effects.remove(&id);
         }
     }
 

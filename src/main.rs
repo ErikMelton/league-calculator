@@ -10,6 +10,7 @@ mod simulation;
 mod champion;
 mod damage;
 mod utils;
+mod constants;
 
 fn main() {
     let mut champion = utils::create_champion_by_name("aatrox");
@@ -30,8 +31,8 @@ fn main() {
     dummy.take_auto_attack_damage(&mut champion);
 
     let mut champion1 = utils::create_champion_by_name("aatrox");
-    let champ1_build = Build::new(&champion1, vec![]);
     champion1.set_level(6);
+    let champ1_build = Build::new(&champion1, vec![]);
 
     let champion2 = utils::create_champion_by_name("aatrox");
     let champ2_build = Build::new(&champion2, vec![]);

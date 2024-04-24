@@ -1,9 +1,8 @@
-use std::ops::Rem;
 use std::time::Duration;
 use crate::build::Build;
 use crate::champion::Champion;
+use crate::constants::{TICKS_PER_SECOND};
 use crate::damage::Damage;
-use crate::effects::DamageType;
 
 pub struct Scenario {
     pub first_actor: u8, // 0 = you, 1 = enemy; maybe should be an enum
@@ -13,9 +12,6 @@ pub struct Scenario {
     pub champ2_build: Build,
     // TODO: Champ2 ability rotation, hit chance
 }
-
-const TICKS_PER_SECOND: f32 = 30.0;
-const TICK_SECOND: f32 = 1.0 / TICKS_PER_SECOND;
 
 impl Scenario {
 
@@ -47,10 +43,6 @@ impl Scenario {
 
 
         while champ1.health > 0.0 && champ2.health > 0.0 {
-            // Decrement time left on self-applied DoT effects
-            self.decrement_own_effect_time_left(&mut champ1);
-            self.decrement_own_effect_time_left(&mut champ2);
-
             let mut total_damage = Damage::new(0.0, 0.0, 0.0);
 
             total_damage += self.calculate_aa_damage_and_side_effects(
@@ -59,11 +51,20 @@ impl Scenario {
                 &mut champ1, champ1_as_in_ticks,
                 &mut champ2, champ2_as_in_ticks
             );
-            // let dot_damage = self.calculate_dot_damage
+
+            // TODO: Test this in scenario
+            total_damage += self.calculate_dot_damage(tick, &mut champ1, &mut champ2);
+
+            // TODO: Check stacking effect damage
 
             if total_damage.total() > 0.0 {
                 println!("A total of {} damage was dealt this tick. \n", total_damage.total());
             }
+
+            champ1.decrement_own_effect_time_left();
+            champ1.decrement_enemy_effect_time_left();
+            champ2.decrement_own_effect_time_left();
+            champ2.decrement_enemy_effect_time_left();
 
             tick += 1;
         }
@@ -91,63 +92,19 @@ impl Scenario {
         }
     }
 
-    fn decrement_own_effect_time_left(&mut self, champ: &mut Champion) {
-        for (id, effect) in champ.friendly_duration_on_hit_effects.iter_mut() {
-            if effect.effect_time_left <= Duration::from_secs(0) {
-                champ.friendly_duration_on_hit_effects.remove(id);
+    fn calculate_dot_damage(&mut self, tick: i32, champ1: &mut Champion, champ2: &mut Champion) -> Damage {
+        let damage1 = champ1.calculate_and_apply_dot_effects(tick);
+        let damage2 = champ2.calculate_and_apply_dot_effects(tick);
 
-                continue;
-            }
-
-            if effect.finite_time_left {
-                effect.reduce_time_left(Duration::from_secs_f32(TICK_SECOND));
-            }
+        if damage1.total() > 0.0 {
+            println!("{tick} | {} ({}) takes {} dot damage!", champ1.name, champ1.level, damage1.total());
         }
 
-        for (id, effect) in champ.friendly_stacking_on_hit_effects.iter_mut() {
-            if effect.effect_time_left <= Duration::from_secs(0) {
-                champ.friendly_stacking_on_hit_effects.remove(id);
-
-                continue;
-            }
-
-            if effect.finite_time_left {
-                effect.reduce_time_left(Duration::from_secs_f32(TICK_SECOND));
-            }
+        if damage2.total() > 0.0 {
+            println!("{tick} | {} ({}) takes {} dot damage!", champ2.name, champ2.level, damage2.total());
         }
-    }
 
-    fn check_and_calculate_dot_effects(&mut self, tick: i32, champ1: &mut Champion, champ2: &mut Champion) {
-        for (id, effect) in champ1.enemy_duration_on_hit_effects.iter_mut() {
-            if effect.damage_time_left <= Duration::from_secs(0) {
-                champ1.enemy_duration_on_hit_effects.remove(id);
-
-                continue;
-            }
-
-            // TODO: Check if the damage time left is a multiple of the tick time and effect tick rate
-            if tick % &effect.tick_rate == 0 {
-                let mut damage = Damage::new(0.0, 0.0, 0.0);
-
-                match effect.damage_type {
-                    DamageType::Physical => {
-                        damage.physical_component = effect.damage_over_time;
-                    }
-                    DamageType::Magical => {
-                        damage.magical_component = effect.damage_over_time;
-                    }
-                    DamageType::True => {
-                        damage.true_component = effect.damage_over_time;
-                    }
-                }
-
-                champ1.take_dot_damage()
-
-            }
-
-
-            effect.effect_time_left -= Duration::from_secs_f32(TICK_SECOND);
-        }
+        damage1 + damage2
     }
 
     fn calculate_aa_damage_and_side_effects(&mut self, tick: i32,
@@ -211,9 +168,6 @@ impl Scenario {
 
             return damage;
         }
-
-
-        // TODO: Check DoT damage / stacking effect damage
 
         // TODO: Consider auto cancels
 
