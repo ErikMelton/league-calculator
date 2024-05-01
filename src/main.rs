@@ -25,7 +25,7 @@ fn main() {
 
     let mut dummy = utils::create_champion_by_name("dummy");
 
-    println!("Champion: {}, {}", champion.name, champion.health);
+    println!("Champion: {}, {}", champion.name, champion.champ_stats.health);
 
     dummy.take_auto_attack_damage(&mut champion);
     dummy.take_auto_attack_damage(&mut champion);

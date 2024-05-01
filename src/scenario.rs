@@ -29,10 +29,10 @@ impl Scenario {
         let first_hit_reaction_delay_in_ticks = (TICKS_PER_SECOND * self.first_hit_reaction_delay.as_secs_f32()).round() as i32;
 
         let mut champ1 = self.champ1_build.champion.clone();
-        let champ1_as_in_ticks = (TICKS_PER_SECOND / champ1.as_).round() as i32;
+        let champ1_as_in_ticks = (TICKS_PER_SECOND / champ1.champ_stats.as_).round() as i32;
 
         let mut champ2 = self.champ2_build.champion.clone();
-        let champ2_as_in_ticks = (TICKS_PER_SECOND / champ2.as_).round() as i32;
+        let champ2_as_in_ticks = (TICKS_PER_SECOND / champ2.champ_stats.as_).round() as i32;
 
         println!("Calculating scenario between:");
         println!("{} at level {}", champ1.name, champ1.level);
@@ -42,7 +42,7 @@ impl Scenario {
         println!();
 
 
-        while champ1.health > 0.0 && champ2.health > 0.0 {
+        while champ1.champ_stats.health > 0.0 && champ2.champ_stats.health > 0.0 {
             let mut total_damage = Damage::new(0.0, 0.0, 0.0);
 
             total_damage += self.calculate_aa_damage_and_side_effects(
@@ -69,20 +69,20 @@ impl Scenario {
             tick += 1;
         }
 
-        if champ1.health <= 0.0 {
+        if champ1.champ_stats.health <= 0.0 {
             println!("{} ({}) wins!", champ2.name, champ2.level);
         } else {
             println!("{} ({}) wins!", champ1.name, champ2.level);
         }
 
-        println!("{} ({}): {}", champ1.name, champ1.level, champ1.health);
-        println!("{} ({}): {}", champ2.name, champ1.level, champ2.health);
+        println!("{} ({}): {}", champ1.name, champ1.level, champ1.champ_stats.health);
+        println!("{} ({}): {}", champ2.name, champ1.level, champ2.champ_stats.health);
         println!("The fight would have lasted {} seconds.", tick as f32 / TICKS_PER_SECOND);
     }
 
     fn apply_duration_on_hit_effects(&mut self, receiver: &mut Champion, giver: &mut Champion) {
         for (_, effect) in giver.friendly_duration_on_hit_effects.iter() {
-            receiver.apply_enemy_duration_on_hit_effect(effect.clone());
+            receiver.apply_enemy_dot_on_hit_effect(effect.clone());
         }
     }
 

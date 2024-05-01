@@ -100,4 +100,54 @@ mod tests {
         assert_eq!(damage3.magical_component, 150.0);
         assert_eq!(damage3.true_component, 150.0);
     }
+
+    #[test]
+    fn test_clone() {
+        let damage1 = Damage::new(100.0, 100.0, 100.0);
+        let mut damage2 = damage1.clone();
+
+        assert_eq!(damage2.total(), 300.0);
+        assert_eq!(damage2.physical_component, 100.0);
+        assert_eq!(damage2.magical_component, 100.0);
+        assert_eq!(damage2.true_component, 100.0);
+
+        damage2.physical_component = 50.0;
+        damage2.magical_component = 50.0;
+        damage2.true_component = 50.0;
+
+        assert_eq!(damage1.total(), 300.0);
+        assert_eq!(damage1.physical_component, 100.0);
+        assert_eq!(damage1.magical_component, 100.0);
+        assert_eq!(damage1.true_component, 100.0);
+
+        assert_eq!(damage2.total(), 150.0);
+        assert_eq!(damage2.physical_component, 50.0);
+        assert_eq!(damage2.magical_component, 50.0);
+        assert_eq!(damage2.true_component, 50.0);
+    }
+
+    #[test]
+    fn test_copy() {
+        let damage1 = Damage::new(100.0, 100.0, 100.0);
+        let mut damage2 = damage1;
+
+        assert_eq!(damage2.total(), 300.0);
+        assert_eq!(damage2.physical_component, 100.0);
+        assert_eq!(damage2.magical_component, 100.0);
+        assert_eq!(damage2.true_component, 100.0);
+
+        damage2.physical_component = 50.0;
+        damage2.magical_component = 50.0;
+        damage2.true_component = 50.0;
+
+        assert_eq!(damage1.total(), 300.0);
+        assert_eq!(damage1.physical_component, 100.0);
+        assert_eq!(damage1.magical_component, 100.0);
+        assert_eq!(damage1.true_component, 100.0);
+
+        assert_eq!(damage2.total(), 150.0);
+        assert_eq!(damage2.physical_component, 50.0);
+        assert_eq!(damage2.magical_component, 50.0);
+        assert_eq!(damage2.true_component, 50.0);
+    }
 }

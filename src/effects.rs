@@ -144,19 +144,19 @@ impl LimitedUseOnHitEffect {
     }
 }
 
-impl PartialEq for &DoTEffect {
+impl PartialEq for DoTEffect {
     fn eq(&self, other: &Self) -> bool {
         self.id == other.id
     }
 }
 
-impl PartialEq for &LimitedUseOnHitEffect {
+impl PartialEq for LimitedUseOnHitEffect {
     fn eq(&self, other: &Self) -> bool {
         self.id == other.id
     }
 }
 
-impl PartialEq for &StackingOnHitEffect {
+impl PartialEq for StackingOnHitEffect {
     fn eq(&self, other: &Self) -> bool {
         self.id == other.id
     }
@@ -300,6 +300,60 @@ mod tests {
     }
 
     #[test]
+    fn test_stacking_on_hit_effect_reduce_effect_time_left() {
+        let mut stacking_on_hit_effect = StackingOnHitEffect::new("test", 5.0, DamageType::True, 5, Duration::from_secs(5), Duration::from_secs(10), true);
+        stacking_on_hit_effect.reduce_effect_time_left(Duration::from_secs(2));
+
+        assert_eq!(stacking_on_hit_effect.effect_time_left, Duration::from_secs(8));
+    }
+
+    #[test]
+    fn test_stacking_on_hit_effect_set_effect_time_left() {
+        let mut stacking_on_hit_effect = StackingOnHitEffect::new("test", 5.0, DamageType::True, 5, Duration::from_secs(5), Duration::from_secs(10), true);
+        stacking_on_hit_effect.set_effect_time_left(Duration::from_secs(10));
+
+        assert_eq!(stacking_on_hit_effect.effect_time_left, Duration::from_secs(10));
+    }
+
+    #[test]
+    fn test_dot_effect_set_effect_time_left() {
+        let mut dot_effect = DoTEffect::new("burn", 5.0, DamageType::Magical, Duration::from_secs(5), EffectTickRate::PerSecond, Duration::from_secs(10), true);
+        dot_effect.set_effect_time_left(Duration::from_secs(10));
+
+        assert_eq!(dot_effect.effect_time_left, Duration::from_secs(10));
+    }
+
+    #[test]
+    fn test_dot_effect_reduce_effect_time_left() {
+        let mut dot_effect = DoTEffect::new("burn", 5.0, DamageType::Magical, Duration::from_secs(5), EffectTickRate::PerSecond, Duration::from_secs(10), true);
+        dot_effect.reduce_effect_time_left(Duration::from_secs(2));
+
+        assert_eq!(dot_effect.effect_time_left, Duration::from_secs(8));
+    }
+
+    #[test]
+    fn test_limited_use_on_hit_effect_set_effect_time_left() {
+        let mut limited_use_on_hit_effect = LimitedUseOnHitEffect::new("test", 50.0, DamageType::True, 5, Duration::from_secs(10), true);
+        limited_use_on_hit_effect.set_effect_time_left(Duration::from_secs(10));
+
+        assert_eq!(limited_use_on_hit_effect.effect_time_left, Duration::from_secs(10));
+    }
+
+    #[test]
+    fn test_limited_use_on_hit_effect_reduce_effect_time_left() {
+        let mut limited_use_on_hit_effect = LimitedUseOnHitEffect::new("test", 50.0, DamageType::True, 5, Duration::from_secs(10), true);
+        limited_use_on_hit_effect.reduce_effect_time_left(Duration::from_secs(2));
+
+        assert_eq!(limited_use_on_hit_effect.effect_time_left, Duration::from_secs(8));
+    }
+}
+
+#[cfg(test)]
+mod struct_tests {
+    use std::time::Duration;
+    use crate::effects::{DamageType, DoTEffect, EffectTickRate, LimitedUseOnHitEffect, StackingOnHitEffect};
+
+    #[test]
     fn test_partial_eq_for_dot_effect() {
         let dot_effect1 = DoTEffect::new("burn", 5.0, DamageType::Magical, Duration::from_secs(5), EffectTickRate::PerSecond, Duration::from_secs(10), true);
         let dot_effect2 = DoTEffect::new("burn", 5.0, DamageType::Magical, Duration::from_secs(5), EffectTickRate::PerSecond, Duration::from_secs(10), true);
@@ -368,5 +422,106 @@ mod tests {
         assert_ne!(&effect_tick_rate3, &effect_tick_rate5);
         assert_ne!(&effect_tick_rate3, &effect_tick_rate7);
         assert_ne!(&effect_tick_rate5, &effect_tick_rate7);
+    }
+
+    #[test]
+    fn test_effect_tick_rate_value() {
+        let effect_tick_rate1 = EffectTickRate::PerSecond;
+        let effect_tick_rate2 = EffectTickRate::PerHalfSecond;
+        let effect_tick_rate3 = EffectTickRate::PerQuarterSecond;
+        let effect_tick_rate4 = EffectTickRate::PerHalfQuarterSecond;
+
+        assert_eq!(effect_tick_rate1.value(), 30);
+        assert_eq!(effect_tick_rate2.value(), 15);
+        assert_eq!(effect_tick_rate3.value(), 8);
+        assert_eq!(effect_tick_rate4.value(), 4);
+    }
+
+    #[test]
+    fn test_effect_tick_rate_rem() {
+        let effect_tick_rate1 = EffectTickRate::PerSecond;
+        let effect_tick_rate2 = EffectTickRate::PerHalfSecond;
+        let effect_tick_rate3 = EffectTickRate::PerQuarterSecond;
+        let effect_tick_rate4 = EffectTickRate::PerHalfQuarterSecond;
+
+        assert_eq!(30 % &effect_tick_rate1, 0);
+        assert_eq!(30 % &effect_tick_rate2, 0);
+        assert_eq!(30 % &effect_tick_rate3, 6);
+        assert_eq!(30 % &effect_tick_rate4, 2);
+    }
+
+    #[test]
+    fn test_debug_damage_type() {
+        let damage_type = DamageType::Physical;
+
+        assert_eq!(format!("{:?}", damage_type), "Physical");
+    }
+
+    #[test]
+    fn test_clone_damage_type() {
+        let damage_type = DamageType::Physical;
+        let damage_type_clone = damage_type.clone();
+
+        assert_eq!(damage_type, damage_type_clone);
+    }
+
+    #[test]
+    fn test_debug_effective_tick_rate() {
+        let effect_tick_rate = EffectTickRate::PerSecond;
+
+        assert_eq!(format!("{:?}", effect_tick_rate), "PerSecond");
+    }
+
+    #[test]
+    fn test_clone_effective_tick_rate() {
+        let effect_tick_rate = EffectTickRate::PerSecond;
+        let effect_tick_rate_clone = effect_tick_rate.clone();
+
+        assert_eq!(effect_tick_rate, effect_tick_rate_clone);
+    }
+
+    #[test]
+    fn test_debug_dot_effect_struct() {
+        let dot_effect = DoTEffect::new("burn", 5.0, DamageType::Magical, Duration::from_secs(5), EffectTickRate::PerSecond, Duration::from_secs(10), true);
+
+        assert_eq!(format!("{:?}", dot_effect), "DoTEffect { id: \"burn\", damage_over_time: 5.0, damage_type: Magical, damage_time_left: 5s, tick_rate: PerSecond, effect_time_left: 10s, finite_time_left: true }");
+    }
+
+    #[test]
+    fn test_clone_dot_effect_struct() {
+        let dot_effect = DoTEffect::new("burn", 5.0, DamageType::Magical, Duration::from_secs(5), EffectTickRate::PerSecond, Duration::from_secs(10), true);
+        let dot_effect_clone = dot_effect.clone();
+
+        assert_eq!(dot_effect, dot_effect_clone);
+    }
+
+    #[test]
+    fn test_debug_limited_use_on_hit_effect_struct() {
+        let limited_use_on_hit_effect = LimitedUseOnHitEffect::new("test", 50.0, DamageType::True, 5, Duration::from_secs(10), true);
+
+        assert_eq!(format!("{:?}", limited_use_on_hit_effect), "LimitedUseOnHitEffect { id: \"test\", damage: 50.0, damage_type: True, num_uses: 5, effect_time_left: 10s, finite_time_left: true }");
+    }
+
+    #[test]
+    fn test_clone_limited_use_on_hit_effect_struct() {
+        let limited_use_on_hit_effect = LimitedUseOnHitEffect::new("test", 50.0, DamageType::True, 5, Duration::from_secs(10), true);
+        let limited_use_on_hit_effect_clone = limited_use_on_hit_effect.clone();
+
+        assert_eq!(limited_use_on_hit_effect, limited_use_on_hit_effect_clone);
+    }
+
+    #[test]
+    fn test_debug_stacking_on_hit_effect_struct() {
+        let stacking_on_hit_effect = StackingOnHitEffect::new("test", 5.0, DamageType::True, 5, Duration::from_secs(5), Duration::from_secs(10), true);
+
+        assert_eq!(format!("{:?}", stacking_on_hit_effect), "StackingOnHitEffect { id: \"test\", damage_over_time: 5.0, damage_type: True, damage_time_left: 5s, max_stacks: 5, current_stacks: 0, effect_time_left: 10s, finite_time_left: true }");
+    }
+
+    #[test]
+    fn test_clone_stacking_on_hit_effect_struct() {
+        let stacking_on_hit_effect = StackingOnHitEffect::new("test", 5.0, DamageType::True, 5, Duration::from_secs(5), Duration::from_secs(10), true);
+        let stacking_on_hit_effect_clone = stacking_on_hit_effect.clone();
+
+        assert_eq!(stacking_on_hit_effect, stacking_on_hit_effect_clone);
     }
 }
