@@ -53,23 +53,32 @@ impl Champion {
     }
 
     pub fn apply_enemy_dot_on_hit_effect(&mut self, effect: DoTEffect) {
-        if self.enemy_dot_on_hit_effects.get(&effect.id).is_some() {
-            self.enemy_dot_on_hit_effects.get_mut(&effect.id).unwrap().damage_time_left = effect.damage_time_left;
+        let existing_effect = self.enemy_dot_on_hit_effects.get_mut(&effect.id);
 
-            return;
+        match existing_effect {
+            Some(existing_effect) => {
+                existing_effect.damage_time_left = effect.damage_time_left;
+            }
+            None => {
+                self.enemy_dot_on_hit_effects.insert(effect.id.to_string(), effect);
+            }
         }
-
-        self.enemy_dot_on_hit_effects.insert(effect.id.to_string(), effect);
     }
 
-    pub fn apply_enemy_stacking_on_hit_effect(&mut self, effect: StackingOnHitEffect) {
-        if self.enemy_stacking_on_hit_effects.get(&effect.id).is_some() && self.enemy_stacking_on_hit_effects.get(&effect.id).unwrap().current_stacks < effect.max_stacks {
-            self.enemy_stacking_on_hit_effects.get_mut(&effect.id).unwrap().current_stacks += 1;
+    pub fn apply_enemy_stacking_on_hit_effect(&mut self, mut effect: StackingOnHitEffect) {
+        let existing_effect = self.enemy_stacking_on_hit_effects.get_mut(&effect.id);
 
-            return;
+        match existing_effect {
+            Some(existing_effect) => {
+                if existing_effect.current_stacks < effect.max_stacks {
+                    existing_effect.current_stacks += 1;
+                }
+            }
+            None => {
+                effect.current_stacks = 1;
+                self.enemy_stacking_on_hit_effects.insert(effect.id.to_string(), effect);
+            }
         }
-
-        self.enemy_stacking_on_hit_effects.insert(effect.id.to_string(), effect);
     }
 
     pub fn calculate_and_apply_dot_effects(&mut self, tick: i32) -> Damage {
@@ -399,7 +408,6 @@ impl Champion {
         }
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -854,5 +862,44 @@ mod struct_tests {
         assert_eq!(champion.level, clone.level);
         assert_eq!(champion.friendly_limited_use_on_hit_effects.len(), clone.friendly_limited_use_on_hit_effects.len());
         assert_eq!(champion.friendly_duration_on_hit_effects.len(), clone.friendly_duration_on_hit_effects.len());
+    }
+}
+
+#[cfg(test)]
+mod effect_tests {
+    use std::time::Duration;
+    use crate::effects::{DamageType, StackingOnHitEffect};
+    use crate::utils::create_champion_by_name;
+
+    #[test]
+    fn test_apply_enemy_stacking_on_hit_effect() {
+        let mut champion = create_champion_by_name("test-bruiser");
+        let enemy = create_champion_by_name("test-bruiser");
+
+        let effect = StackingOnHitEffect::new("test", 10.0, DamageType::Physical, 3, Duration::from_secs(5), Duration::from_secs(10), true);
+
+        champion.apply_enemy_stacking_on_hit_effect(effect.clone());
+
+        assert_eq!(champion.enemy_stacking_on_hit_effects.len(), 1);
+
+        champion.apply_enemy_stacking_on_hit_effect(effect.clone());
+
+        assert_eq!(champion.enemy_stacking_on_hit_effects.len(), 1);
+        assert_eq!(champion.enemy_stacking_on_hit_effects.get("test").unwrap().current_stacks, 2);
+
+        let effect2 = StackingOnHitEffect::new("test2", 10.0, DamageType::Physical, 1, Duration::from_secs(5), Duration::from_secs(10), true);
+
+        champion.apply_enemy_stacking_on_hit_effect(effect2.clone());
+        champion.apply_enemy_stacking_on_hit_effect(effect2.clone());
+
+        assert_eq!(champion.enemy_stacking_on_hit_effects.len(), 2);
+        assert_eq!(champion.enemy_stacking_on_hit_effects.get("test2").unwrap().current_stacks, 1);
+
+        let effect3 = StackingOnHitEffect::new("test3", 10.0, DamageType::Physical, 1, Duration::from_secs(5), Duration::from_secs(10), true);
+
+        champion.apply_enemy_stacking_on_hit_effect(effect3.clone());
+
+        assert_eq!(champion.enemy_stacking_on_hit_effects.len(), 3);
+        assert_eq!(champion.enemy_stacking_on_hit_effects.get("test3").unwrap().current_stacks, 1);
     }
 }

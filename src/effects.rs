@@ -98,7 +98,7 @@ impl DoTEffect {
             damage_time_left: time_left,
             tick_rate,
             effect_time_left,
-            finite_time_left
+            finite_time_left,
         }
     }
 
